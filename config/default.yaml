@@ -1,0 +1,33 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+database:
+  url: "postgres://irongate:irongate@localhost:5432/irongate"
+  max_connections: 10
+
+redis:
+  url: "redis://localhost:6379"
+
+base_url: "http://localhost:8080"
+
+log:
+  level: "info"
+  format: "pretty"
+
+tokens:
+  access_token_ttl_seconds: 3600
+  refresh_token_ttl_seconds: 2592000
+  id_token_ttl_seconds: 3600
+
+session:
+  ttl_seconds: 86400
+  cookie_name: "irongate_session"
+  cookie_secure: false
+
+smtp:
+  host: "localhost"
+  port: 1025
+  from: "noreply@localhost"
+  username: ""
+  password: ""

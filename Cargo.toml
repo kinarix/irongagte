@@ -1,0 +1,77 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/crypto",
+    "crates/store",
+    "crates/auth",
+    "crates/webauthn",
+    "crates/federation",
+    "crates/authz",
+    "crates/scim",
+    "crates/api",
+]
+
+[workspace.dependencies]
+# Web
+axum             = "0.7"
+tower            = "0.4"
+tower-http       = { version = "0.5", features = ["trace", "cors", "request-id"] }
+tokio            = { version = "1", features = ["full"] }
+
+# Database
+sqlx             = { version = "0.7", features = ["postgres", "sqlite", "uuid", "time", "runtime-tokio-rustls"] }
+
+# Cache
+fred             = "8"
+
+# Crypto / JWT
+jsonwebtoken     = "9"
+argon2           = "0.5"
+password-hash    = "0.5"
+sha2             = "0.10"
+rand             = "0.8"
+base64ct         = { version = "1", features = ["alloc"] }
+p256             = "0.13"
+rsa              = "0.9"
+
+# MFA
+totp-rs          = "5"
+webauthn-rs      = "0.5"
+
+# Federation
+reqwest          = { version = "0.12", features = ["json"] }
+ldap3            = "0.11"
+
+# Email
+lettre           = "0.11"
+
+# Serialization
+serde            = { version = "1", features = ["derive"] }
+serde_json       = "1"
+uuid             = { version = "1", features = ["v4", "serde"] }
+time             = { version = "0.3", features = ["serde"] }
+url              = { version = "2", features = ["serde"] }
+
+# Config
+config           = "0.14"
+
+# CLI
+clap             = { version = "4", features = ["derive"] }
+
+# Error handling
+thiserror        = "1"
+anyhow           = "1"
+
+# Async traits
+async-trait      = "0.1"
+
+# Observability
+tracing                     = "0.1"
+tracing-subscriber          = { version = "0.3", features = ["env-filter", "json"] }
+metrics                     = "0.22"
+metrics-exporter-prometheus = "0.13"
+
+# Dev / test
+mockall     = "0.12"
+fake        = "2"
