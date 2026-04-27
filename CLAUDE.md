@@ -2,6 +2,18 @@
 
 > **GitHub:** https://github.com/kinarix/irongate
 
+## Knowledge Graph
+
+An interactive knowledge graph of this codebase is available at:
+
+```
+graphify-out/graph.html        — interactive HTML visualization (open in browser)
+graphify-out/graph_export.json — GraphRAG-ready JSON (286 nodes, 393 edges, 32 communities)
+graphify-out/GRAPH_REPORT.md   — plain-language architecture report
+```
+
+Run `/graphify` to rebuild after significant code changes.
+
 ## Project Overview
 
 **Irongate** is a full-featured, self-hostable Identity and Access Management (IAM) system

@@ -14,29 +14,31 @@ members = [
 
 [workspace.dependencies]
 # Web
-axum             = "0.7"
-tower            = "0.4"
-tower-http       = { version = "0.5", features = ["trace", "cors", "request-id"] }
+axum             = "0.8"
+tower            = "0.5"
+tower-http       = { version = "0.6", features = ["trace", "cors", "request-id"] }
 tokio            = { version = "1", features = ["full"] }
 
 # Database
-sqlx             = { version = "0.7", features = ["postgres", "sqlite", "uuid", "time", "runtime-tokio-rustls"] }
+sqlx             = { version = "0.8", features = ["postgres", "sqlite", "uuid", "time", "runtime-tokio"] }
 
 # Cache
-fred             = "8"
+fred             = "10"
 
 # Crypto / JWT
-jsonwebtoken     = "9"
+jsonwebtoken     = { version = "10.3.0", features = ["use_pem", "rust_crypto"] }
 argon2           = "0.5"
-password-hash    = "0.5"
-sha2             = "0.10"
-rand             = "0.8"
+password-hash    = "0.6.1"
+sha2             = "0.11.0"
+rand             = "0.10.1"
+rand_core        = { version = "0.6", features = ["getrandom"] }
 base64ct         = { version = "1", features = ["alloc"] }
 p256             = "0.13"
 rsa              = "0.9"
 
+
 # MFA
-totp-rs          = "5"
+totp-rs          = { version = "5", features = ["gen_secret", "otpauth"] }
 webauthn-rs      = "0.5"
 
 # Federation
@@ -54,13 +56,13 @@ time             = { version = "0.3", features = ["serde"] }
 url              = { version = "2", features = ["serde"] }
 
 # Config
-config           = "0.14"
+config           = "0.15"
 
 # CLI
 clap             = { version = "4", features = ["derive"] }
 
 # Error handling
-thiserror        = "1"
+thiserror        = "2"
 anyhow           = "1"
 
 # Async traits
@@ -69,9 +71,9 @@ async-trait      = "0.1"
 # Observability
 tracing                     = "0.1"
 tracing-subscriber          = { version = "0.3", features = ["env-filter", "json"] }
-metrics                     = "0.22"
-metrics-exporter-prometheus = "0.13"
+metrics                     = "0.24"
+metrics-exporter-prometheus = "0.16"
 
 # Dev / test
-mockall     = "0.12"
-fake        = "2"
+mockall     = "0.13"
+fake        = "4"

@@ -318,3 +318,125 @@ fn federated_identity_roundtrip_serde() {
     assert_eq!(fi.email, back.email);
     assert_eq!(fi.email_verified, back.email_verified);
 }
+
+// ── Identity ──────────────────────────────────────────────────────────────────
+
+#[test]
+fn identity_roundtrip_serde() {
+    let identity = Identity {
+        id: Uuid::new_v4(),
+        user_id: Uuid::new_v4(),
+        tenant_id: Uuid::new_v4(),
+        provider: "google".into(),
+        provider_user_id: "google|1234567890".into(),
+        email: "alice@gmail.com".into(),
+        raw_claims: serde_json::json!({"sub": "1234567890", "email": "alice@gmail.com"}),
+        created_at: now(),
+        updated_at: now(),
+    };
+    let json = serde_json::to_string(&identity).unwrap();
+    let back: Identity = serde_json::from_str(&json).unwrap();
+    assert_eq!(identity.id, back.id);
+    assert_eq!(identity.provider, back.provider);
+    assert_eq!(identity.provider_user_id, back.provider_user_id);
+    assert_eq!(identity.email, back.email);
+}
+
+#[test]
+fn identity_clone_equality() {
+    let identity = Identity {
+        id: Uuid::new_v4(),
+        user_id: Uuid::new_v4(),
+        tenant_id: Uuid::new_v4(),
+        provider: "github".into(),
+        provider_user_id: "gh|999".into(),
+        email: "bob@github.com".into(),
+        raw_claims: serde_json::json!({}),
+        created_at: now(),
+        updated_at: now(),
+    };
+    assert_eq!(identity, identity.clone());
+}
+
+// ── RefreshToken ──────────────────────────────────────────────────────────────
+
+#[test]
+fn refresh_token_roundtrip_serde() {
+    let token = RefreshToken {
+        id: Uuid::new_v4(),
+        session_id: Uuid::new_v4(),
+        application_id: Uuid::new_v4(),
+        token_hash: "sha256hashgoeshere".into(),
+        scope: "openid email profile".into(),
+        previous_id: None,
+        created_at: now(),
+        expires_at: now() + time::Duration::days(30),
+        revoked_at: None,
+    };
+    let json = serde_json::to_string(&token).unwrap();
+    let back: RefreshToken = serde_json::from_str(&json).unwrap();
+    assert_eq!(token.id, back.id);
+    assert_eq!(token.token_hash, back.token_hash);
+    assert_eq!(token.scope, back.scope);
+    assert!(back.revoked_at.is_none());
+}
+
+#[test]
+fn refresh_token_with_rotation_chain() {
+    let parent_id = Uuid::new_v4();
+    let token = RefreshToken {
+        id: Uuid::new_v4(),
+        session_id: Uuid::new_v4(),
+        application_id: Uuid::new_v4(),
+        token_hash: "newhash".into(),
+        scope: "openid".into(),
+        previous_id: Some(parent_id),
+        created_at: now(),
+        expires_at: now() + time::Duration::days(30),
+        revoked_at: None,
+    };
+    let json = serde_json::to_string(&token).unwrap();
+    let back: RefreshToken = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.previous_id, Some(parent_id));
+}
+
+// ── IdpType (serde) ───────────────────────────────────────────────────────────
+
+#[test]
+fn idp_type_roundtrip_serde() {
+    for idp_type in [IdpType::Local, IdpType::Oidc, IdpType::Oauth2, IdpType::Ldap] {
+        let json = serde_json::to_string(&idp_type).unwrap();
+        let back: IdpType = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            std::mem::discriminant(&idp_type),
+            std::mem::discriminant(&back)
+        );
+    }
+}
+
+// ── UserStatus (extra edge cases) ─────────────────────────────────────────────
+
+#[test]
+fn user_status_case_sensitive_parse() {
+    assert!(UserStatus::from_str("Active").is_err());
+    assert!(UserStatus::from_str("ACTIVE").is_err());
+    assert!(UserStatus::from_str("").is_err());
+}
+
+// ── Session (extra) ───────────────────────────────────────────────────────────
+
+#[test]
+fn session_both_expired_and_revoked_is_invalid() {
+    let session = Session {
+        id: Uuid::new_v4(),
+        user_id: Uuid::new_v4(),
+        tenant_id: Uuid::new_v4(),
+        idp_id: None,
+        ip_address: None,
+        user_agent: None,
+        created_at: now(),
+        expires_at: now() - time::Duration::seconds(1),
+        revoked_at: Some(now()),
+    };
+    assert!(!session.is_valid());
+}
