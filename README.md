@@ -106,4 +106,4 @@ Verifiable Credentials, admin dashboard UI.
 
 ## License
 
-MIT
+Apache 2.0 — see [LICENSE](LICENSE).
