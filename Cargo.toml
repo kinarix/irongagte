@@ -1,8 +1,5 @@
 [workspace]
 resolver = "2"
-
-[workspace.package]
-license = "Apache-2.0"
 members = [
     "crates/core",
     "crates/crypto",
@@ -14,6 +11,9 @@ members = [
     "crates/scim",
     "crates/api",
 ]
+
+[workspace.package]
+license = "Apache-2.0"
 
 [workspace.dependencies]
 # Web
