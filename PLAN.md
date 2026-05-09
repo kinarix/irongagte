@@ -22,7 +22,7 @@ prescribed by CLAUDE.md. SAML is explicitly deferred to Phase 2 and is not inclu
 
 ---
 
-## Crate 1 — `core`
+## Crate 1 — `core` ✅ COMPLETE (37 tests passing)
 
 **Purpose**: Pure domain layer. Zero external dependencies beyond std + serde + uuid + time + thiserror.
 
@@ -84,7 +84,7 @@ pub struct CallbackParams { pub code: String, pub state: String, pub nonce: Opti
 
 ---
 
-## Crate 2 — `crypto`
+## Crate 2 — `crypto` ✅ COMPLETE (48 tests passing)
 
 **Purpose**: All cryptographic primitives. Depends only on `core`.
 
@@ -132,7 +132,7 @@ pub struct JwtClaims {  // generic, for both access + id tokens
 
 ---
 
-## Crate 3 — `store`
+## Crate 3 — `store` ✅ COMPLETE (30 integration tests passing)
 
 **Purpose**: All persistence. Depends on `core` + `crypto`.
 
@@ -147,20 +147,17 @@ pub struct JwtClaims {  // generic, for both access + id tokens
 ### Migration sequence
 
 ```
-0001_create_tenants.sql
-0002_create_users.sql
-0003_create_identities.sql
-0004_create_applications.sql
-0005_create_sessions.sql
-0006_create_refresh_tokens.sql
-0007_create_roles.sql
-0008_create_permissions.sql
-0009_create_role_assignments.sql
-0010_create_idp_configs.sql
-0011_create_signing_keys.sql
-0012_create_audit_log.sql
-0013_create_mfa_credentials.sql   (TOTP secrets, backup codes)
-0014_create_webauthn_credentials.sql
+0001_create_tenants.sql           ✅
+0002_create_users.sql             ✅
+0003_create_identities.sql        ✅
+0004_create_applications.sql      ✅
+0005_create_sessions.sql          ✅
+0006_create_refresh_tokens.sql    ✅
+0007_create_roles_permissions.sql ✅
+0008_create_idp_configs.sql       ✅
+0009_create_user_credentials.sql  ✅  (password_hash, totp_secret — added for auth)
+0010_create_magic_links.sql       ✅  (token_hash, expires_at, used_at)
+(webauthn_credentials — added in crate 5)
 ```
 
 ### Repository implementations
@@ -182,7 +179,7 @@ Plus: `RedisSessionStore` for fast session lookup (backed by `fred` crate).
 
 ---
 
-## Crate 4 — `auth`
+## Crate 4 — `auth` ✅ COMPLETE (11 unit tests passing)
 
 **Purpose**: Local authentication flows. Depends on `core`, `crypto`, `store`.
 

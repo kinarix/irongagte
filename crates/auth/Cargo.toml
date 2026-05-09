@@ -6,10 +6,13 @@ edition = "2021"
 [dependencies]
 irongate-core   = { path = "../core" }
 irongate-crypto = { path = "../crypto" }
-irongate-store  = { path = "../store" }
 async-trait     = { workspace = true }
 serde           = { workspace = true }
 serde_json      = { workspace = true }
 thiserror       = { workspace = true }
 time            = { workspace = true }
 uuid            = { workspace = true }
+
+[dev-dependencies]
+mockall = { workspace = true }
+tokio   = { workspace = true }

@@ -10,7 +10,11 @@ async-trait     = { workspace = true }
 fred            = { workspace = true }
 serde           = { workspace = true }
 serde_json      = { workspace = true }
-sqlx            = { workspace = true }
+sqlx            = { workspace = true, features = ["macros"] }
 thiserror       = { workspace = true }
 time            = { workspace = true }
 uuid            = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+time  = { workspace = true }

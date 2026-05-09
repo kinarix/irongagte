@@ -258,6 +258,33 @@ pub struct IdpConfig {
     pub updated_at: OffsetDateTime,
 }
 
+// ── UserCredentials ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UserCredentials {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub user_id: Uuid,
+    pub password_hash: Option<String>,
+    pub totp_secret: Option<String>,
+    pub totp_enabled: bool,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+// ── MagicLink ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MagicLink {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub user_id: Uuid,
+    pub token_hash: String,
+    pub expires_at: OffsetDateTime,
+    pub used_at: Option<OffsetDateTime>,
+    pub created_at: OffsetDateTime,
+}
+
 // ── AuditEvent ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -3,8 +3,8 @@ use uuid::Uuid;
 
 use crate::errors::StoreError;
 use crate::types::{
-    Application, AuditEvent, Identity, IdpConfig, Permission, RefreshToken, Role, Session, Tenant,
-    User,
+    Application, AuditEvent, Identity, IdpConfig, MagicLink, Permission, RefreshToken, Role,
+    Session, Tenant, User, UserCredentials,
 };
 
 // ── UserRepository ────────────────────────────────────────────────────────────
@@ -169,4 +169,32 @@ pub trait AuditRepository: Send + Sync {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<AuditEvent>, StoreError>;
+}
+
+// ── UserCredentialsRepository ─────────────────────────────────────────────────
+
+#[async_trait]
+pub trait UserCredentialsRepository: Send + Sync {
+    async fn create(&self, creds: UserCredentials) -> Result<UserCredentials, StoreError>;
+    async fn get_by_user_id(
+        &self,
+        user_id: Uuid,
+        tenant_id: Uuid,
+    ) -> Result<UserCredentials, StoreError>;
+    async fn update(&self, creds: UserCredentials) -> Result<UserCredentials, StoreError>;
+    async fn delete(&self, user_id: Uuid, tenant_id: Uuid) -> Result<(), StoreError>;
+}
+
+// ── MagicLinkRepository ───────────────────────────────────────────────────────
+
+#[async_trait]
+pub trait MagicLinkRepository: Send + Sync {
+    async fn create(&self, link: MagicLink) -> Result<MagicLink, StoreError>;
+    async fn get_by_token_hash(
+        &self,
+        token_hash: &str,
+        tenant_id: Uuid,
+    ) -> Result<MagicLink, StoreError>;
+    async fn mark_used(&self, id: Uuid) -> Result<(), StoreError>;
+    async fn delete_expired(&self, tenant_id: Uuid) -> Result<u64, StoreError>;
 }
