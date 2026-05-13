@@ -1,8 +1,10 @@
 pub mod application;
 pub mod audit;
+pub mod group;
 pub mod identity;
 pub mod idp_config;
 pub mod magic_link;
+pub mod passkey;
 pub mod permission;
 pub mod refresh_token;
 pub mod role;
@@ -12,9 +14,11 @@ pub mod user_credentials;
 
 pub use application::PgApplicationRepo;
 pub use audit::PgAuditRepo;
+pub use group::PgGroupRepo;
 pub use identity::PgIdentityRepo;
 pub use idp_config::PgIdpConfigRepo;
 pub use magic_link::PgMagicLinkRepo;
+pub use passkey::PgPasskeyRepo;
 pub use permission::PgPermissionRepo;
 pub use refresh_token::PgRefreshTokenRepo;
 pub use role::PgRoleRepo;
@@ -77,5 +81,11 @@ impl PgStore {
     }
     pub fn magic_links(&self) -> PgMagicLinkRepo {
         PgMagicLinkRepo { pool: self.pool.clone() }
+    }
+    pub fn passkeys(&self) -> PgPasskeyRepo {
+        PgPasskeyRepo { pool: self.pool.clone() }
+    }
+    pub fn groups(&self) -> PgGroupRepo {
+        PgGroupRepo { pool: self.pool.clone() }
     }
 }

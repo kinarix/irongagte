@@ -1,8 +1,10 @@
 pub mod application;
 pub mod audit;
+pub mod group;
 pub mod identity;
 pub mod idp_config;
 pub mod magic_link;
+pub mod passkey;
 pub mod permission;
 pub mod refresh_token;
 pub mod role;
@@ -12,9 +14,11 @@ pub mod user_credentials;
 
 pub use application::SqliteApplicationRepo;
 pub use audit::SqliteAuditRepo;
+pub use group::SqliteGroupRepo;
 pub use identity::SqliteIdentityRepo;
 pub use idp_config::SqliteIdpConfigRepo;
 pub use magic_link::SqliteMagicLinkRepo;
+pub use passkey::SqlitePasskeyRepo;
 pub use permission::SqlitePermissionRepo;
 pub use refresh_token::SqliteRefreshTokenRepo;
 pub use role::SqliteRoleRepo;
@@ -96,5 +100,11 @@ impl SqliteStore {
     }
     pub fn magic_links(&self) -> SqliteMagicLinkRepo {
         SqliteMagicLinkRepo { pool: self.pool.clone() }
+    }
+    pub fn passkeys(&self) -> SqlitePasskeyRepo {
+        SqlitePasskeyRepo { pool: self.pool.clone() }
+    }
+    pub fn groups(&self) -> SqliteGroupRepo {
+        SqliteGroupRepo { pool: self.pool.clone() }
     }
 }

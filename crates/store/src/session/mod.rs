@@ -1,6 +1,10 @@
 use async_trait::async_trait;
 use fred::prelude::*;
-use irongate_core::{errors::StoreError, repositories::SessionRepository, Session};
+use irongate_core::{
+    errors::StoreError,
+    repositories::{AuthCodeData, AuthCodeStore, SessionRepository},
+    Session,
+};
 use uuid::Uuid;
 
 pub struct RedisSessionStore {
@@ -8,6 +12,10 @@ pub struct RedisSessionStore {
 }
 
 impl RedisSessionStore {
+    fn auth_code_key(code: &str) -> String {
+        format!("authcode:{code}")
+    }
+
     pub async fn new(url: &str) -> Result<Self, StoreError> {
         let config = Config::from_url(url).map_err(|e| StoreError::Cache(e.to_string()))?;
         let client = Builder::from_config(config)
@@ -167,5 +175,38 @@ impl SessionRepository for RedisSessionStore {
         }
 
         Ok(sessions)
+    }
+}
+
+#[async_trait]
+impl AuthCodeStore for RedisSessionStore {
+    async fn store_code(
+        &self,
+        code: &str,
+        data: AuthCodeData,
+        ttl_secs: i64,
+    ) -> Result<(), StoreError> {
+        let key = Self::auth_code_key(code);
+        let json =
+            serde_json::to_string(&data).map_err(|e| StoreError::Cache(e.to_string()))?;
+        let _: () = self
+            .client
+            .set(&key, json, Some(Expiration::EX(ttl_secs)), None, false)
+            .await
+            .map_err(Self::map_err)?;
+        Ok(())
+    }
+
+    async fn take_code(&self, code: &str) -> Result<Option<AuthCodeData>, StoreError> {
+        let key = Self::auth_code_key(code);
+        let json: Option<String> = self.client.getdel(&key).await.map_err(Self::map_err)?;
+        match json {
+            None => Ok(None),
+            Some(j) => {
+                let data = serde_json::from_str(&j)
+                    .map_err(|e| StoreError::Cache(e.to_string()))?;
+                Ok(Some(data))
+            }
+        }
     }
 }
