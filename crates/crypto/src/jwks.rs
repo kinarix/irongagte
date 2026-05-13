@@ -12,7 +12,7 @@ use crate::keys::{KeyAlgorithm, SigningKeyRecord};
 pub fn build_jwks(records: &[SigningKeyRecord]) -> Result<JwkSet, CryptoError> {
     let keys = records
         .iter()
-        .map(|rec| record_to_jwk(rec))
+        .map(record_to_jwk)
         .collect::<Result<Vec<_>, _>>()?;
     Ok(JwkSet { keys })
 }

@@ -28,7 +28,7 @@ pub fn verify<C: DeserializeOwned>(
 ) -> Result<TokenData<C>, CryptoError> {
     let decoding_key = decoding_key_from_pem(key_pem, algorithm)?;
     decode::<C>(token, &decoding_key, validation)
-        .map_err(|e| map_jwt_error(e))
+        .map_err(map_jwt_error)
 }
 
 fn encoding_key_from_pem(pem: &str, algorithm: Algorithm) -> Result<EncodingKey, CryptoError> {
