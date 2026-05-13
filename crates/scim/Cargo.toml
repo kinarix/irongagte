@@ -11,4 +11,11 @@ axum           = { workspace = true }
 serde          = { workspace = true }
 serde_json     = { workspace = true }
 thiserror      = { workspace = true }
+time           = { workspace = true }
 uuid           = { workspace = true }
+
+[dev-dependencies]
+async-trait = { workspace = true }
+mockall     = { workspace = true }
+tokio       = { workspace = true }
+tower       = { workspace = true }
