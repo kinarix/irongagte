@@ -1,1 +1,6 @@
-// API crate — Axum routers, OAuth2/OIDC endpoints, management API
+pub mod claims;
+pub mod config;
+pub mod error;
+pub mod handlers;
+pub mod router;
+pub mod state;

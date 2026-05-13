@@ -1,0 +1,15 @@
+pub mod admin_applications;
+pub mod admin_audit;
+pub mod admin_auth;
+pub mod admin_idp;
+pub mod admin_permissions;
+pub mod admin_roles;
+pub mod admin_sessions;
+pub mod admin_tenants;
+pub mod admin_users;
+pub mod authorize;
+pub mod health;
+pub mod oidc;
+pub mod tenants;
+pub mod token;
+pub mod users;

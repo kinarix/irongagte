@@ -13,10 +13,13 @@ irongate-federation = { path = "../federation" }
 irongate-authz      = { path = "../authz" }
 irongate-scim       = { path = "../scim" }
 anyhow              = { workspace = true }
+base64ct            = { workspace = true }
+sha2                = { workspace = true }
 async-trait         = { workspace = true }
 axum                = { workspace = true }
 config              = { workspace = true }
 fred                = { workspace = true }
+jsonwebtoken        = { workspace = true }
 metrics             = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 serde               = { workspace = true }
@@ -34,3 +37,10 @@ uuid                = { workspace = true }
 [[bin]]
 name = "irongate"
 path = "src/main.rs"
+
+[dev-dependencies]
+async-trait         = { workspace = true }
+irongate-crypto     = { path = "../crypto" }
+mockall             = { workspace = true }
+tokio               = { workspace = true }
+tower               = { workspace = true }
