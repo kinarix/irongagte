@@ -285,6 +285,34 @@ pub struct MagicLink {
     pub created_at: OffsetDateTime,
 }
 
+// ── PasskeyCredential ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PasskeyCredential {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub user_id: Uuid,
+    /// base64url-unpadded encoding of the WebAuthn credential ID bytes
+    pub credential_id: String,
+    pub friendly_name: Option<String>,
+    /// Serialized `webauthn_rs::prelude::Passkey` — opaque JSON blob
+    pub passkey_json: serde_json::Value,
+    pub created_at: OffsetDateTime,
+    pub last_used_at: Option<OffsetDateTime>,
+}
+
+// ── Group ─────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Group {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub display_name: String,
+    pub external_id: Option<String>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
 // ── AuditEvent ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

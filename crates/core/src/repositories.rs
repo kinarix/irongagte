@@ -3,8 +3,8 @@ use uuid::Uuid;
 
 use crate::errors::StoreError;
 use crate::types::{
-    Application, AuditEvent, Identity, IdpConfig, MagicLink, Permission, RefreshToken, Role,
-    Session, Tenant, User, UserCredentials,
+    Application, AuditEvent, Group, Identity, IdpConfig, MagicLink, PasskeyCredential, Permission,
+    RefreshToken, Role, Session, Tenant, User, UserCredentials,
 };
 
 // ── UserRepository ────────────────────────────────────────────────────────────
@@ -197,4 +197,97 @@ pub trait MagicLinkRepository: Send + Sync {
     ) -> Result<MagicLink, StoreError>;
     async fn mark_used(&self, id: Uuid) -> Result<(), StoreError>;
     async fn delete_expired(&self, tenant_id: Uuid) -> Result<u64, StoreError>;
+}
+
+// ── GroupRepository ───────────────────────────────────────────────────────────
+
+#[async_trait]
+pub trait GroupRepository: Send + Sync {
+    async fn create(&self, group: Group) -> Result<Group, StoreError>;
+    async fn get_by_id(&self, id: Uuid, tenant_id: Uuid) -> Result<Group, StoreError>;
+    async fn get_by_display_name(
+        &self,
+        display_name: &str,
+        tenant_id: Uuid,
+    ) -> Result<Group, StoreError>;
+    async fn update(&self, group: Group) -> Result<Group, StoreError>;
+    async fn delete(&self, id: Uuid, tenant_id: Uuid) -> Result<(), StoreError>;
+    async fn list(
+        &self,
+        tenant_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Group>, StoreError>;
+    async fn add_member(
+        &self,
+        group_id: Uuid,
+        user_id: Uuid,
+        tenant_id: Uuid,
+    ) -> Result<(), StoreError>;
+    async fn remove_member(
+        &self,
+        group_id: Uuid,
+        user_id: Uuid,
+        tenant_id: Uuid,
+    ) -> Result<(), StoreError>;
+    async fn list_members(
+        &self,
+        group_id: Uuid,
+        tenant_id: Uuid,
+    ) -> Result<Vec<User>, StoreError>;
+    async fn list_for_user(
+        &self,
+        user_id: Uuid,
+        tenant_id: Uuid,
+    ) -> Result<Vec<Group>, StoreError>;
+}
+
+// ── AuthCodeStore ─────────────────────────────────────────────────────────────
+
+/// Data stored alongside a short-lived authorization code.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AuthCodeData {
+    pub client_id: String,
+    pub redirect_uri: String,
+    pub scope: String,
+    pub user_id: uuid::Uuid,
+    pub tenant_id: uuid::Uuid,
+    pub code_challenge: String,
+    pub code_challenge_method: String,
+}
+
+#[async_trait]
+pub trait AuthCodeStore: Send + Sync {
+    /// Store a code for `ttl_secs` seconds. Replaces any existing entry.
+    async fn store_code(
+        &self,
+        code: &str,
+        data: AuthCodeData,
+        ttl_secs: i64,
+    ) -> Result<(), StoreError>;
+
+    /// Atomically retrieve-and-delete the code. Returns `None` if not found or expired.
+    async fn take_code(&self, code: &str) -> Result<Option<AuthCodeData>, StoreError>;
+}
+
+// ── PasskeyRepository ─────────────────────────────────────────────────────────
+
+#[async_trait]
+pub trait PasskeyRepository: Send + Sync {
+    async fn create(
+        &self,
+        cred: PasskeyCredential,
+    ) -> Result<PasskeyCredential, StoreError>;
+    async fn get_by_credential_id(
+        &self,
+        credential_id: &str,
+        tenant_id: Uuid,
+    ) -> Result<PasskeyCredential, StoreError>;
+    async fn list_for_user(
+        &self,
+        user_id: Uuid,
+        tenant_id: Uuid,
+    ) -> Result<Vec<PasskeyCredential>, StoreError>;
+    async fn update(&self, cred: PasskeyCredential) -> Result<PasskeyCredential, StoreError>;
+    async fn delete(&self, id: Uuid, tenant_id: Uuid) -> Result<(), StoreError>;
 }
