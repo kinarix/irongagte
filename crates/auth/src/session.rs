@@ -24,6 +24,7 @@ impl SessionService {
 
     /// Create a new session and an initial refresh token.
     /// Returns (session, opaque_refresh_token).
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_session(
         &self,
         user_id: Uuid,
