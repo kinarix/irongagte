@@ -3,7 +3,7 @@ server:
   port: 8080
 
 database:
-  url: "postgres://irongate:irongate@localhost:5432/irongate"
+  url: "postgres://irongate:irongate@localhost:5433/irongate"
   max_connections: 10
 
 redis:

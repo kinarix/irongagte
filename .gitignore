@@ -4,3 +4,4 @@
 **/.env
 sqlx-data.json
 data/
+graphify-out/
