@@ -10,6 +10,7 @@ export interface User {
   family_name: string | null
   picture_url: string | null
   status: string
+  attributes: Record<string, any>
   created_at: string
   updated_at: string
   last_login_at: string | null
@@ -27,9 +28,10 @@ export const createUser = (data: {
   tenant_id: string
   email: string
   name?: string
+  attributes?: Record<string, any>
 }) => api.post<User>('/users', data).then((r) => r.data)
 
-export const updateUser = (tenantId: string, id: string, data: Partial<User>) =>
+export const updateUser = (tenantId: string, id: string, data: Partial<User> & { attributes?: Record<string, any> }) =>
   api.put<User>(`/tenants/${tenantId}/users/${id}`, data).then((r) => r.data)
 
 export const deleteUser = (tenantId: string, id: string) =>
@@ -40,14 +42,3 @@ export const suspendUser = (tenantId: string, id: string) =>
 
 export const unsuspendUser = (tenantId: string, id: string) =>
   api.post<User>(`/tenants/${tenantId}/users/${id}/unsuspend`).then((r) => r.data)
-
-export const getUserRoles = (tenantId: string, id: string) =>
-  api.get<{ roles: { id: string; name: string; description: string | null }[] }>(
-    `/tenants/${tenantId}/users/${id}/roles`,
-  ).then((r) => r.data)
-
-export const assignRole = (tenantId: string, userId: string, roleId: string) =>
-  api.post(`/tenants/${tenantId}/users/${userId}/roles`, { role_id: roleId })
-
-export const removeRole = (tenantId: string, userId: string, roleId: string) =>
-  api.delete(`/tenants/${tenantId}/users/${userId}/roles/${roleId}`)

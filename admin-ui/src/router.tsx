@@ -6,8 +6,18 @@ import UserList from './pages/users/UserList'
 import UserDetail from './pages/users/UserDetail'
 import AppList from './pages/applications/AppList'
 import AppForm from './pages/applications/AppForm'
-import RoleList from './pages/roles/RoleList'
-import RoleDetail from './pages/roles/RoleDetail'
+import GroupList from './pages/groups/GroupList'
+import GroupDetail from './pages/groups/GroupDetail'
+import OperatorList from './pages/operators/OperatorList'
+import OperatorDetail from './pages/operators/OperatorDetail'
+import OperatorRoleList from './pages/operator-roles/OperatorRoleList'
+import OperatorRoleForm from './pages/operator-roles/OperatorRoleForm'
+import OperatorRoleDetail from './pages/operator-roles/OperatorRoleDetail'
+import OperatorPermissionList from './pages/operator-permissions/OperatorPermissionList'
+import TenantList from './pages/tenants/TenantList'
+import TenantDetail from './pages/tenants/TenantDetail'
+import ClaimDefList from './pages/claims/ClaimDefList'
+import ClaimDefForm from './pages/claims/ClaimDefForm'
 import IdpList from './pages/idp/IdpList'
 import IdpForm from './pages/idp/IdpForm'
 
@@ -39,12 +49,48 @@ const appEditRoute = createRoute({
   component: AppForm,
 })
 
-const rolesRoute = createRoute({ getParentRoute: () => layoutRoute, path: '/roles', component: RoleList })
-const roleDetailRoute = createRoute({
+const groupsRoute = createRoute({ getParentRoute: () => layoutRoute, path: '/groups', component: GroupList })
+const groupDetailRoute = createRoute({
   getParentRoute: () => layoutRoute,
-  path: '/roles/$roleId',
-  component: RoleDetail,
+  path: '/groups/$groupId',
+  component: GroupDetail,
 })
+
+const claimsRoute = createRoute({ getParentRoute: () => layoutRoute, path: '/claims', component: ClaimDefList })
+const claimNewRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: '/claims/new',
+  component: ClaimDefForm,
+})
+const claimEditRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: '/claims/$claimId/edit',
+  component: ClaimDefForm,
+})
+const tenantsRoute = createRoute({ getParentRoute: () => layoutRoute, path: '/tenants', component: TenantList })
+const tenantDetailRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: '/tenants/$tenantId',
+  component: TenantDetail,
+})
+const operatorsRoute = createRoute({ getParentRoute: () => layoutRoute, path: '/operators', component: OperatorList })
+const operatorDetailRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: '/operators/$operatorId',
+  component: OperatorDetail,
+})
+const operatorRolesRoute = createRoute({ getParentRoute: () => layoutRoute, path: '/operator-roles', component: OperatorRoleList })
+const operatorRoleNewRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: '/operator-roles/new',
+  component: OperatorRoleForm,
+})
+const operatorRoleDetailRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: '/operator-roles/$roleId',
+  component: OperatorRoleDetail,
+})
+const operatorPermissionsRoute = createRoute({ getParentRoute: () => layoutRoute, path: '/operator-permissions', component: OperatorPermissionList })
 
 const idpRoute = createRoute({ getParentRoute: () => layoutRoute, path: '/idp', component: IdpList })
 const idpNewRoute = createRoute({ getParentRoute: () => layoutRoute, path: '/idp/new', component: IdpForm })
@@ -64,8 +110,19 @@ const routeTree = rootRoute.addChildren([
     appsRoute,
     appNewRoute,
     appEditRoute,
-    rolesRoute,
-    roleDetailRoute,
+    groupsRoute,
+    groupDetailRoute,
+    claimsRoute,
+    claimNewRoute,
+    claimEditRoute,
+    tenantsRoute,
+    tenantDetailRoute,
+    operatorsRoute,
+    operatorDetailRoute,
+    operatorRolesRoute,
+    operatorRoleNewRoute,
+    operatorRoleDetailRoute,
+    operatorPermissionsRoute,
     idpRoute,
     idpNewRoute,
     idpEditRoute,

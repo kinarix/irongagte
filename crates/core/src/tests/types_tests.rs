@@ -109,6 +109,7 @@ fn make_user() -> User {
         family_name: Some("Smith".into()),
         picture_url: None,
         status: UserStatus::Active,
+        attributes: serde_json::json!({}),
         created_at: now(),
         updated_at: now(),
         last_login_at: None,
@@ -162,6 +163,7 @@ fn application_roundtrip_serde() {
         grant_types: vec!["authorization_code".into(), "refresh_token".into()],
         access_token_ttl: 3600,
         refresh_token_ttl: 2592000,
+        claim_prefix: "my-app".into(),
         created_at: now(),
         updated_at: now(),
         deleted_at: None,
@@ -171,6 +173,56 @@ fn application_roundtrip_serde() {
     assert_eq!(app.id, back.id);
     assert_eq!(app.redirect_uris, back.redirect_uris);
     assert!(matches!(back.app_type, AppType::Web));
+    assert_eq!(back.claim_prefix, "my-app");
+}
+
+// ── Claim definitions & validation ────────────────────────────────────────────
+
+#[test]
+fn claim_type_display_and_parse() {
+    assert_eq!(ClaimType::Scalar.as_str(), "scalar");
+    assert_eq!(ClaimType::Multi.as_str(), "multi");
+    assert!(matches!(
+        ClaimType::from_str("scalar"),
+        Ok(ClaimType::Scalar)
+    ));
+    assert!(matches!(ClaimType::from_str("multi"), Ok(ClaimType::Multi)));
+    assert!(ClaimType::from_str("other").is_err());
+}
+
+#[test]
+fn claim_definition_roundtrip_serde() {
+    let def = ClaimDefinition {
+        id: Uuid::new_v4(),
+        application_id: Uuid::new_v4(),
+        key: "roles".into(),
+        claim_type: ClaimType::Multi,
+        description: Some("User roles for billing app".into()),
+        created_at: now(),
+        updated_at: now(),
+    };
+    let json = serde_json::to_string(&def).unwrap();
+    let back: ClaimDefinition = serde_json::from_str(&json).unwrap();
+    assert_eq!(def.id, back.id);
+    assert_eq!(back.claim_type, ClaimType::Multi);
+}
+
+#[test]
+fn validate_claim_prefix_rejects_reserved_and_invalid() {
+    assert!(validate_claim_prefix("").is_err());
+    assert!(validate_claim_prefix("sub").is_err());
+    assert!(validate_claim_prefix("iss").is_err());
+    assert!(validate_claim_prefix("has space").is_err());
+    assert!(validate_claim_prefix("colon:bad").is_err());
+    assert!(validate_claim_prefix("ok-prefix_1").is_ok());
+}
+
+#[test]
+fn validate_claim_key_rules() {
+    assert!(validate_claim_key("").is_err());
+    assert!(validate_claim_key("bad space").is_err());
+    assert!(validate_claim_key("plan").is_ok());
+    assert!(validate_claim_key("roles_v2").is_ok());
 }
 
 // ── Session ───────────────────────────────────────────────────────────────────
@@ -220,41 +272,6 @@ fn session_roundtrip_serde() {
     let json = serde_json::to_string(&session).unwrap();
     let back: Session = serde_json::from_str(&json).unwrap();
     assert_eq!(session.id, back.id);
-}
-
-// ── Role + Permission ─────────────────────────────────────────────────────────
-
-#[test]
-fn role_roundtrip_serde() {
-    let role = Role {
-        id: Uuid::new_v4(),
-        tenant_id: Uuid::new_v4(),
-        name: "admin".into(),
-        description: Some("Full access".into()),
-        parent_role_id: None,
-        created_at: now(),
-        updated_at: now(),
-    };
-    let json = serde_json::to_string(&role).unwrap();
-    let back: Role = serde_json::from_str(&json).unwrap();
-    assert_eq!(role.id, back.id);
-    assert_eq!(role.name, back.name);
-}
-
-#[test]
-fn permission_roundtrip_serde() {
-    let perm = Permission {
-        id: Uuid::new_v4(),
-        tenant_id: Uuid::new_v4(),
-        resource: "users".into(),
-        action: "write".into(),
-        description: Some("Can modify users".into()),
-        created_at: now(),
-    };
-    let json = serde_json::to_string(&perm).unwrap();
-    let back: Permission = serde_json::from_str(&json).unwrap();
-    assert_eq!(perm.resource, back.resource);
-    assert_eq!(perm.action, back.action);
 }
 
 // ── IdpConfig ─────────────────────────────────────────────────────────────────

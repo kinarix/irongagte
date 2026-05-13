@@ -24,6 +24,7 @@ fn row_to_user(row: &sqlx::postgres::PgRow) -> Result<User, StoreError> {
         family_name: row.try_get("family_name").map_err(map_row_err)?,
         picture_url: row.try_get("picture_url").map_err(map_row_err)?,
         status,
+        attributes: row.try_get("attributes").map_err(map_row_err)?,
         created_at: row.try_get("created_at").map_err(map_row_err)?,
         updated_at: row.try_get("updated_at").map_err(map_row_err)?,
         last_login_at: row.try_get("last_login_at").map_err(map_row_err)?,
@@ -36,8 +37,8 @@ impl irongate_core::repositories::UserRepository for PgUserRepo {
     async fn create(&self, user: User) -> Result<User, StoreError> {
         let row = sqlx::query(
             "INSERT INTO users (id, tenant_id, email, email_verified, name, given_name,
-             family_name, picture_url, status, created_at, updated_at, last_login_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+             family_name, picture_url, status, attributes, created_at, updated_at, last_login_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
              RETURNING *",
         )
         .bind(user.id)
@@ -49,6 +50,7 @@ impl irongate_core::repositories::UserRepository for PgUserRepo {
         .bind(&user.family_name)
         .bind(&user.picture_url)
         .bind(user.status.to_string())
+        .bind(&user.attributes)
         .bind(user.created_at)
         .bind(user.updated_at)
         .bind(user.last_login_at)
@@ -85,8 +87,8 @@ impl irongate_core::repositories::UserRepository for PgUserRepo {
     async fn update(&self, user: User) -> Result<User, StoreError> {
         let row = sqlx::query(
             "UPDATE users SET email = $1, email_verified = $2, name = $3, given_name = $4,
-             family_name = $5, picture_url = $6, status = $7, updated_at = $8, last_login_at = $9
-             WHERE id = $10 AND tenant_id = $11 AND deleted_at IS NULL
+             family_name = $5, picture_url = $6, status = $7, attributes = $8, updated_at = $9, last_login_at = $10
+             WHERE id = $11 AND tenant_id = $12 AND deleted_at IS NULL
              RETURNING *",
         )
         .bind(&user.email)
@@ -96,6 +98,7 @@ impl irongate_core::repositories::UserRepository for PgUserRepo {
         .bind(&user.family_name)
         .bind(&user.picture_url)
         .bind(user.status.to_string())
+        .bind(&user.attributes)
         .bind(user.updated_at)
         .bind(user.last_login_at)
         .bind(user.id)

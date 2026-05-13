@@ -3,7 +3,7 @@ REDIS_URL      := redis://localhost:6379
 PORT           := 8081
 BASE_URL       := http://localhost:$(PORT)
 LOG_LEVEL      := debug
-ADMIN_EMAIL    ?= admin
+ADMIN_EMAIL    ?= admin@local
 ADMIN_PASSWORD ?= admin
 
 export DATABASE_URL = $(DB_URL)
@@ -12,7 +12,7 @@ export PORT
 export BASE_URL
 export LOG_LEVEL
 
-.PHONY: build build-admin test fmt lint check up down infra migrate db-reset dev admin-init clean help
+.PHONY: build build-admin test fmt lint check up down infra migrate db-reset reset-db dev admin-init init clean help
 
 help:
 	@echo "Targets:"
@@ -20,8 +20,9 @@ help:
 	@echo "  up           Alias for infra"
 	@echo "  down         Stop and remove containers"
 	@echo "  migrate      Run Postgres migrations"
-	@echo "  db-reset     Drop and re-migrate the database"
-	@echo "  admin-init   Bootstrap super-admin user and register admin OAuth2 client"
+	@echo "  reset-db     Drop and re-migrate the database (alias: db-reset)"
+	@echo "  admin-init   Bootstrap an operator (dashboard admin) and seed the permission catalog"
+	@echo "  init         Full clean start: reset-db then admin-init"
 	@echo "  dev          Start services, migrate, run the server"
 	@echo "  build-admin  Build admin UI (admin-ui/ → crates/api/static/admin/)"
 	@echo "  build        Build admin UI then release binary"
@@ -39,7 +40,7 @@ down:
 migrate:
 	sqlx migrate run --source migrations/postgres --database-url $(DB_URL)
 
-db-reset:
+db-reset reset-db: infra
 	sqlx database drop -y --database-url $(DB_URL)
 	sqlx database create --database-url $(DB_URL)
 	$(MAKE) migrate
@@ -50,8 +51,13 @@ infra:
 admin-init: infra migrate
 	cargo run -- admin init \
 		--email $(ADMIN_EMAIL) \
-		--password $(ADMIN_PASSWORD) \
-		--extra-redirect-uri http://localhost:5173/admin/callback
+		--password $(ADMIN_PASSWORD)
+
+# Full bootstrap from a clean DB. Sequenced via sub-make calls so ordering
+# holds even with parallel make (-j).
+init:
+	$(MAKE) reset-db
+	$(MAKE) admin-init
 
 dev: infra migrate
 	cargo run -- serve

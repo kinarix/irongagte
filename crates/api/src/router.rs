@@ -9,8 +9,10 @@ use tower_http::services::{ServeDir, ServeFile};
 
 use crate::{
     handlers::{
-        admin_applications, admin_audit, admin_idp, admin_permissions, admin_roles,
-        admin_sessions, admin_tenants, admin_users, authorize, health, oidc, tenants, token, users,
+        admin_applications, admin_audit, admin_claims, admin_groups, admin_idp,
+        admin_operator_permissions, admin_operator_roles, admin_operators,
+        admin_sessions, admin_tenants, admin_users, authorize,
+        health, oidc, operator, tenants, token, users,
     },
     state::AppState,
 };
@@ -46,38 +48,97 @@ fn admin_router() -> Router<Arc<AppState>> {
         )
         .route("/tenants/{tenant_id}/users/{id}/suspend", post(admin_users::suspend_user))
         .route("/tenants/{tenant_id}/users/{id}/unsuspend", post(admin_users::unsuspend_user))
+        // Claims: definitions, group assignments, user assignments
         .route(
-            "/tenants/{tenant_id}/users/{id}/roles",
-            get(admin_users::list_user_roles).post(admin_users::assign_role),
+            "/claims/definitions",
+            get(admin_claims::list_claim_definitions)
+                .post(admin_claims::create_claim_definition),
         )
         .route(
-            "/tenants/{tenant_id}/users/{user_id}/roles/{role_id}",
-            delete(admin_users::remove_role),
-        )
-        // Roles
-        .route("/roles", get(admin_roles::list_roles).post(admin_roles::create_role))
-        .route(
-            "/tenants/{tenant_id}/roles/{id}",
-            get(admin_roles::get_role)
-                .put(admin_roles::update_role)
-                .delete(admin_roles::delete_role),
+            "/tenants/{tenant_id}/claims/definitions/{id}",
+            get(admin_claims::get_claim_definition)
+                .put(admin_claims::update_claim_definition)
+                .delete(admin_claims::delete_claim_definition),
         )
         .route(
-            "/tenants/{tenant_id}/roles/{id}/permissions",
-            get(admin_roles::list_role_permissions).post(admin_roles::assign_permission),
+            "/claims/group-assignments",
+            get(admin_claims::list_group_claims)
+                .post(admin_claims::assign_group_claim)
+                .delete(admin_claims::revoke_group_claim),
         )
         .route(
-            "/tenants/{tenant_id}/roles/{role_id}/permissions/{perm_id}",
-            delete(admin_roles::remove_permission),
+            "/claims/user-assignments",
+            get(admin_claims::list_user_claims)
+                .post(admin_claims::assign_user_claim)
+                .delete(admin_claims::revoke_user_claim),
         )
-        // Permissions
+        .route("/claims/effective", get(admin_claims::preview_effective_claims))
+        // Operators (irongate dashboard users)
         .route(
-            "/permissions",
-            get(admin_permissions::list_permissions).post(admin_permissions::create_permission),
+            "/operators",
+            get(admin_operators::list_operators).post(admin_operators::create_operator),
         )
         .route(
-            "/tenants/{tenant_id}/permissions/{id}",
-            delete(admin_permissions::delete_permission),
+            "/operators/{id}",
+            get(admin_operators::get_operator)
+                .put(admin_operators::update_operator)
+                .delete(admin_operators::delete_operator),
+        )
+        .route(
+            "/operators/{id}/password",
+            post(admin_operators::change_password),
+        )
+        // Operator role assignments (per operator)
+        .route(
+            "/operators/{operator_id}/roles",
+            get(admin_operator_roles::list_operator_role_assignments),
+        )
+        .route(
+            "/operators/{operator_id}/roles/{role_id}",
+            post(admin_operator_roles::assign_role_to_operator)
+                .delete(admin_operator_roles::revoke_role_from_operator),
+        )
+        // Operator roles (system-level RBAC)
+        .route(
+            "/operator-roles",
+            get(admin_operator_roles::list_operator_roles)
+                .post(admin_operator_roles::create_operator_role),
+        )
+        .route(
+            "/operator-roles/{id}",
+            get(admin_operator_roles::get_operator_role)
+                .put(admin_operator_roles::update_operator_role)
+                .delete(admin_operator_roles::delete_operator_role),
+        )
+        .route(
+            "/operator-roles/{role_id}/permissions",
+            get(admin_operator_roles::list_role_permissions),
+        )
+        .route(
+            "/operator-roles/{role_id}/permissions/{permission_id}",
+            post(admin_operator_roles::assign_permission_to_role)
+                .delete(admin_operator_roles::revoke_permission_from_role),
+        )
+        // Operator permission catalog (read-only)
+        .route(
+            "/operator-permissions",
+            get(admin_operator_permissions::list_operator_permissions),
+        )
+        // Groups
+        .route("/groups", get(admin_groups::list_groups).post(admin_groups::create_group))
+        .route(
+            "/tenants/{tenant_id}/groups/{id}",
+            get(admin_groups::get_group)
+                .put(admin_groups::update_group)
+                .delete(admin_groups::delete_group),
+        )
+        .route(
+            "/tenants/{tenant_id}/groups/{id}/members",
+            get(admin_groups::list_group_members).post(admin_groups::add_group_member),
+        )
+        .route(
+            "/tenants/{tenant_id}/groups/{group_id}/members/{user_id}",
+            delete(admin_groups::remove_group_member),
         )
         // IdP configs
         .route(
@@ -112,6 +173,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/oauth2/authorize", get(authorize::get_authorize).post(authorize::post_authorize))
         .route("/oauth2/token", post(token::token))
         .route("/oauth2/userinfo", get(oidc::userinfo))
+        // Operator (irongate dashboard) auth — distinct from end-user OAuth flow.
+        .route("/operator/login", post(operator::login))
+        .route("/operator/logout", post(operator::logout))
+        .route("/operator/me", get(operator::me))
         // Management API — users
         .route("/api/v1/users", get(users::list_users).post(users::create_user))
         .route(

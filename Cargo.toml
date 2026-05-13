@@ -23,7 +23,7 @@ tower-http       = { version = "0.6", features = ["trace", "cors", "request-id",
 tokio            = { version = "1", features = ["full"] }
 
 # Database
-sqlx             = { version = "0.8", features = ["postgres", "sqlite", "uuid", "time", "runtime-tokio"] }
+sqlx             = { version = "0.8", features = ["postgres", "uuid", "time", "runtime-tokio"] }
 
 # Cache
 fred             = "10"

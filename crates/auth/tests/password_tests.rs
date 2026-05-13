@@ -45,6 +45,7 @@ fn make_user(status: UserStatus) -> User {
         family_name: None,
         picture_url: None,
         status,
+        attributes: serde_json::json!({}),
         created_at: OffsetDateTime::now_utc(),
         updated_at: OffsetDateTime::now_utc(),
         last_login_at: None,

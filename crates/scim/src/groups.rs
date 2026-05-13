@@ -102,6 +102,7 @@ pub async fn create_group(
         tenant_id: state.tenant_id,
         display_name: input.display_name.clone(),
         external_id: input.external_id.clone(),
+        priority: 0,
         created_at: now,
         updated_at: now,
     };
@@ -148,6 +149,7 @@ pub async fn replace_group(
         tenant_id: existing.tenant_id,
         display_name: input.display_name.clone(),
         external_id: input.external_id.clone(),
+        priority: existing.priority,
         created_at: existing.created_at,
         updated_at: OffsetDateTime::now_utc(),
     };

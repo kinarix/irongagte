@@ -61,6 +61,7 @@ pub struct User {
     pub family_name: Option<String>,
     pub picture_url: Option<String>,
     pub status: UserStatus,
+    pub attributes: serde_json::Value,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
     pub last_login_at: Option<OffsetDateTime>,
@@ -144,9 +145,184 @@ pub struct Application {
     pub grant_types: Vec<String>,
     pub access_token_ttl: i64,
     pub refresh_token_ttl: i64,
+    /// Namespace for this app's custom JWT claims. Final claim keys are
+    /// `<claim_prefix>:<claim_definition.key>`. Standard OIDC claims (`sub`,
+    /// `email`, `name`, …) are emitted unprefixed.
+    pub claim_prefix: String,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
     pub deleted_at: Option<OffsetDateTime>,
+}
+
+// ── Claim definitions ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimType {
+    /// Single string value. Conflicts: user-direct overrides; among groups, the
+    /// highest `priority` wins; ties broken by `created_at` ascending.
+    Scalar,
+    /// Multi-valued claim. Emitted as a JSON array of strings; all
+    /// group/user values are merged and deduped.
+    Multi,
+}
+
+impl ClaimType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Scalar => "scalar",
+            Self::Multi => "multi",
+        }
+    }
+}
+
+impl std::str::FromStr for ClaimType {
+    type Err = crate::errors::CoreError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "scalar" => Ok(Self::Scalar),
+            "multi" => Ok(Self::Multi),
+            other => Err(crate::errors::CoreError::Validation(format!(
+                "unknown claim type: {other}"
+            ))),
+        }
+    }
+}
+
+/// Declaration of a single custom JWT claim emitted by an application.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ClaimDefinition {
+    pub id: Uuid,
+    pub application_id: Uuid,
+    pub key: String,
+    pub claim_type: ClaimType,
+    pub description: Option<String>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+/// A single `(group, claim_definition, value)` assignment. Multi claims allow
+/// multiple rows per `(group_id, claim_def_id)`; the table-level primary key
+/// is `(group_id, claim_def_id, value)`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GroupClaim {
+    pub group_id: Uuid,
+    pub claim_def_id: Uuid,
+    pub value: String,
+    pub created_at: OffsetDateTime,
+}
+
+/// A direct user-to-claim assignment. For scalar claims this overrides any
+/// group-derived value; for multi claims it merges with group values.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UserClaim {
+    pub user_id: Uuid,
+    pub claim_def_id: Uuid,
+    pub value: String,
+    pub created_at: OffsetDateTime,
+}
+
+/// Resources allowed for Operator RBAC (system-level authorization).
+/// The constants below mirror this list and are the recommended way to refer
+/// to a resource in code — never use a string literal at a permission check site.
+pub const ALLOWED_OPERATOR_RESOURCES: &[&str] = &[
+    "tenants",
+    "users",
+    "applications",
+    "operators",
+    "operator_roles",
+    "operator_permissions",
+    "groups",
+    "idp_configs",
+    "audit_events",
+    "claims",
+    "sessions",
+];
+
+pub mod op_resource {
+    pub const TENANTS: &str = "tenants";
+    pub const USERS: &str = "users";
+    pub const APPLICATIONS: &str = "applications";
+    pub const OPERATORS: &str = "operators";
+    pub const OPERATOR_ROLES: &str = "operator_roles";
+    pub const OPERATOR_PERMISSIONS: &str = "operator_permissions";
+    pub const GROUPS: &str = "groups";
+    pub const IDP_CONFIGS: &str = "idp_configs";
+    pub const AUDIT_EVENTS: &str = "audit_events";
+    pub const CLAIMS: &str = "claims";
+    pub const SESSIONS: &str = "sessions";
+}
+
+/// Actions allowed for Operator RBAC.
+pub const ALLOWED_OPERATOR_ACTIONS: &[&str] =
+    &["create", "read", "update", "delete", "list", "assign", "revoke"];
+
+pub mod op_action {
+    pub const CREATE: &str = "create";
+    pub const READ: &str = "read";
+    pub const UPDATE: &str = "update";
+    pub const DELETE: &str = "delete";
+    pub const LIST: &str = "list";
+    pub const ASSIGN: &str = "assign";
+    pub const REVOKE: &str = "revoke";
+}
+
+/// Top-level JWT claim names that the issuer reserves; admins may not map onto them.
+pub const RESERVED_CLAIM_TARGETS: &[&str] = &[
+    "sub",
+    "iss",
+    "aud",
+    "exp",
+    "iat",
+    "jti",
+    "nbf",
+    "nonce",
+    "auth_time",
+    "acr",
+    "amr",
+    "azp",
+    "tenant_id",
+    "scope",
+];
+
+/// Validate an application's claim prefix. Returns `Err` with a human-readable
+/// reason if the prefix is invalid. A valid prefix is non-empty, does not collide
+/// with a reserved JWT claim name, and contains only `[A-Za-z0-9_-]`.
+pub fn validate_claim_prefix(prefix: &str) -> Result<(), String> {
+    if prefix.is_empty() {
+        return Err("claim_prefix must not be empty".into());
+    }
+    if RESERVED_CLAIM_TARGETS.contains(&prefix) {
+        return Err(format!(
+            "claim_prefix '{prefix}' collides with a reserved JWT claim name"
+        ));
+    }
+    if !prefix
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(format!(
+            "claim_prefix '{prefix}' must contain only letters, digits, underscores or hyphens"
+        ));
+    }
+    Ok(())
+}
+
+/// Validate a claim definition key. Same rules as `validate_claim_prefix`, plus
+/// the result `<prefix>:<key>` must not match a reserved claim name.
+pub fn validate_claim_key(key: &str) -> Result<(), String> {
+    if key.is_empty() {
+        return Err("claim key must not be empty".into());
+    }
+    if !key
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(format!(
+            "claim key '{key}' must contain only letters, digits, underscores or hyphens"
+        ));
+    }
+    Ok(())
 }
 
 // ── Session ───────────────────────────────────────────────────────────────────
@@ -185,27 +361,36 @@ pub struct RefreshToken {
     pub revoked_at: Option<OffsetDateTime>,
 }
 
-// ── Role + Permission ─────────────────────────────────────────────────────────
+// ── Operator RBAC ─────────────────────────────────────────────────────────────
 
+/// System-level permission (resource, action) pair for operator authorization.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Role {
+pub struct OperatorPermission {
     pub id: Uuid,
-    pub tenant_id: Uuid,
-    pub name: String,
-    pub description: Option<String>,
-    pub parent_role_id: Option<Uuid>,
-    pub created_at: OffsetDateTime,
-    pub updated_at: OffsetDateTime,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Permission {
-    pub id: Uuid,
-    pub tenant_id: Uuid,
     pub resource: String,
     pub action: String,
     pub description: Option<String>,
     pub created_at: OffsetDateTime,
+}
+
+/// Operator role. `tenant_id` is `None` for global (cross-tenant) roles and
+/// `Some(id)` for roles whose permissions are restricted to a single tenant.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OperatorRole {
+    pub id: Uuid,
+    pub tenant_id: Option<Uuid>,
+    pub name: String,
+    pub description: Option<String>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+/// Assignment of an operator to an operator role.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OperatorRoleAssignment {
+    pub operator_id: Uuid,
+    pub operator_role_id: Uuid,
+    pub assigned_at: OffsetDateTime,
 }
 
 // ── IdP config ────────────────────────────────────────────────────────────────
@@ -272,6 +457,61 @@ pub struct UserCredentials {
     pub updated_at: OffsetDateTime,
 }
 
+// ── Operator (Irongate dashboard user, NOT an end-user) ──────────────────────
+
+/// An Operator manages the irongate IAM instance itself: tenants, applications,
+/// roles, permissions, groups, etc. This is the Auth0-style "Dashboard user" —
+/// completely separate from end users who authenticate *through* irongate to
+/// access their own applications.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Operator {
+    pub id: Uuid,
+    pub email: String,
+    pub name: Option<String>,
+    pub status: OperatorStatus,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub last_login_at: Option<OffsetDateTime>,
+    pub deleted_at: Option<OffsetDateTime>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OperatorStatus {
+    Active,
+    Suspended,
+}
+
+impl std::str::FromStr for OperatorStatus {
+    type Err = crate::errors::CoreError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "active" => Ok(OperatorStatus::Active),
+            "suspended" => Ok(OperatorStatus::Suspended),
+            other => Err(crate::errors::CoreError::Validation(format!(
+                "invalid operator status '{other}'"
+            ))),
+        }
+    }
+}
+
+impl OperatorStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OperatorStatus::Active => "active",
+            OperatorStatus::Suspended => "suspended",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OperatorCredentials {
+    pub operator_id: Uuid,
+    pub password_hash: String,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
 // ── MagicLink ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -309,6 +549,9 @@ pub struct Group {
     pub tenant_id: Uuid,
     pub display_name: String,
     pub external_id: Option<String>,
+    /// Tiebreaker for scalar claim conflicts when a user is in multiple groups
+    /// assigning the same scalar claim. Higher wins; ties → `created_at` asc.
+    pub priority: i32,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }

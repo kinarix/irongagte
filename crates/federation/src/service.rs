@@ -69,6 +69,7 @@ impl FederationService {
                     family_name: None,
                     picture_url: federated.picture.clone(),
                     status: UserStatus::Active,
+                    attributes: serde_json::json!({}),
                     created_at: now,
                     updated_at: now,
                     last_login_at: None,

@@ -2,30 +2,30 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use irongate_api::config::Settings;
-use irongate_auth::{PasswordService, SessionService};
-use irongate_authz::AuthzService;
 use irongate_core::{
     repositories::{
-        ApplicationRepository, AuditRepository, GroupRepository, IdpConfigRepository,
-        IdentityRepository, PasskeyRepository, PermissionRepository, RefreshTokenRepository,
-        RoleRepository, TenantRepository, UserCredentialsRepository, UserRepository,
+        OperatorCredentialsRepository, OperatorPermissionRepository, OperatorRepository,
+        OperatorRoleRepository, TenantRepository,
     },
-    types::{AppType, Application, Permission, Role, Tenant, User, UserStatus},
+    types::{
+        Operator, OperatorCredentials, OperatorPermission, OperatorRole, OperatorStatus, Tenant,
+        ALLOWED_OPERATOR_ACTIONS, ALLOWED_OPERATOR_RESOURCES,
+    },
 };
+use irongate_crypto::hash::hash_password;
 use irongate_store::PgStore;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-const SYSTEM_TENANT_ID: Uuid = Uuid::from_u128(1);
-const ADMIN_CLIENT_ID: &str = "irongate-admin";
-
+/// Bootstrap an Irongate operator (dashboard user) and seed a Default tenant
+/// with its permission catalog. Operators are entirely separate from end users
+/// and live outside any tenant.
+///
+/// Usage:
+///   irongate admin init --email admin@example.com --password '...'
 pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let email = flag(args, "--email").context("--email is required")?;
     let password = flag(args, "--password").context("--password is required")?;
-    let extra_redirect_uris: Vec<String> = flags(args, "--extra-redirect-uri")
-        .into_iter()
-        .map(String::from)
-        .collect();
 
     let settings = Settings::load().context("failed to load configuration")?;
 
@@ -34,98 +34,157 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         .context("failed to connect to database")?;
     pg.migrate().await.context("failed to run migrations")?;
 
-    let users: Arc<dyn UserRepository> = Arc::new(pg.users());
+    let operators: Arc<dyn OperatorRepository> = Arc::new(pg.operators());
+    let operator_creds: Arc<dyn OperatorCredentialsRepository> =
+        Arc::new(pg.operator_credentials());
+    let operator_perms: Arc<dyn OperatorPermissionRepository> =
+        Arc::new(pg.operator_permissions());
+    let operator_roles: Arc<dyn OperatorRoleRepository> = Arc::new(pg.operator_roles());
     let tenants: Arc<dyn TenantRepository> = Arc::new(pg.tenants());
-    let applications: Arc<dyn ApplicationRepository> = Arc::new(pg.applications());
-    let roles: Arc<dyn RoleRepository> = Arc::new(pg.roles());
-    let permissions: Arc<dyn PermissionRepository> = Arc::new(pg.permissions());
-    let credentials: Arc<dyn UserCredentialsRepository> = Arc::new(pg.user_credentials());
-    let refresh_tokens: Arc<dyn RefreshTokenRepository> = Arc::new(pg.refresh_tokens());
-    let _groups: Arc<dyn GroupRepository> = Arc::new(pg.groups());
-    let _passkeys: Arc<dyn PasskeyRepository> = Arc::new(pg.passkeys());
-    let _identities: Arc<dyn IdentityRepository> = Arc::new(pg.identities());
-    let _idp_configs: Arc<dyn IdpConfigRepository> = Arc::new(pg.idp_configs());
-    let _audit: Arc<dyn AuditRepository> = Arc::new(pg.audit());
-    let redis = irongate_store::RedisSessionStore::new(&settings.redis.url)
-        .await
-        .context("failed to connect to Redis")?;
-    let sessions = Arc::new(redis);
 
-    let password_svc = Arc::new(PasswordService::new(users.clone(), credentials));
-    let _session_svc = Arc::new(SessionService::new(sessions, refresh_tokens.clone()));
-    let authz_svc = Arc::new(AuthzService::new(roles.clone(), permissions.clone()));
+    let op = upsert_operator(operators.clone(), email).await?;
+    println!("operator: {} ({})", op.email, op.id);
 
-    // 1. Upsert system tenant
-    let tenant = upsert_system_tenant(tenants.clone()).await?;
-    println!("tenant: {} ({})", tenant.slug, tenant.id);
-
-    // 2. Upsert super_admin role with * permission
-    let (role, perm) =
-        upsert_super_admin_role(roles.clone(), permissions.clone(), tenant.id).await?;
-    println!("role: {} ({})", role.name, role.id);
-    println!("permission: {}:{} ({})", perm.resource, perm.action, perm.id);
-
-    // 3. Create admin user
-    let user = create_admin_user(users.clone(), tenant.id, &email).await?;
-    println!("user: {} ({})", user.email, user.id);
-
-    // 4. Set password
-    password_svc.set_password(user.id, tenant.id, &password).await?;
+    set_operator_password(operator_creds.clone(), op.id, password).await?;
     println!("password: set");
 
-    // 5. Assign role
-    authz_svc
-        .assign_role(user.id, role.id, tenant.id)
-        .await
-        .context("failed to assign super_admin role")?;
-    println!("role assigned");
+    seed_operator_permission_catalog(operator_perms.clone()).await?;
+    println!("operator permission catalog: seeded");
 
-    // 6. Register admin UI OAuth2 client
-    let mut redirect_uris = vec![format!("{}/admin/callback", settings.base_url)];
-    redirect_uris.extend(extra_redirect_uris);
-    let app = upsert_admin_app(applications.clone(), tenant.id, redirect_uris).await?;
-    println!("application: {} (client_id={})", app.name, app.client_id);
+    let super_admin_role =
+        upsert_super_admin_role(operator_roles.clone(), operator_perms.clone()).await?;
+    println!("super_admin role: {}", super_admin_role.id);
 
-    println!("\nAdmin init complete. Login at {}/admin", settings.base_url);
+    let viewer_role = upsert_viewer_role(operator_roles.clone(), operator_perms.clone()).await?;
+    println!("viewer role: {}", viewer_role.id);
+
+    operator_roles
+        .assign_to_operator(op.id, super_admin_role.id)
+        .await?;
+    println!("operator assigned to super_admin role");
+
+    let default_tenant = upsert_default_tenant(tenants.clone()).await?;
+    println!(
+        "default tenant: {} ({})",
+        default_tenant.slug, default_tenant.id
+    );
+
+    println!(
+        "\nAdmin init complete. Login at {}/admin (POST /operator/login)",
+        settings.base_url
+    );
     Ok(())
 }
 
-async fn upsert_system_tenant(tenants: Arc<dyn TenantRepository>) -> anyhow::Result<Tenant> {
-    if let Ok(t) = tenants.get_by_id(SYSTEM_TENANT_ID).await {
-        return Ok(t);
+async fn upsert_operator(
+    operators: Arc<dyn OperatorRepository>,
+    email: &str,
+) -> anyhow::Result<Operator> {
+    if let Ok(o) = operators.get_by_email(email).await {
+        return Ok(o);
     }
-    if let Ok(t) = tenants.get_by_slug("system").await {
+    let now = OffsetDateTime::now_utc();
+    let op = Operator {
+        id: Uuid::new_v4(),
+        email: email.to_string(),
+        name: Some("Admin".into()),
+        status: OperatorStatus::Active,
+        created_at: now,
+        updated_at: now,
+        last_login_at: None,
+        deleted_at: None,
+    };
+    operators.create(op).await.context("failed to create operator")
+}
+
+async fn set_operator_password(
+    creds: Arc<dyn OperatorCredentialsRepository>,
+    operator_id: Uuid,
+    password: &str,
+) -> anyhow::Result<()> {
+    let hash = hash_password(password).map_err(|e| anyhow::anyhow!("hash failed: {e}"))?;
+    let now = OffsetDateTime::now_utc();
+    match creds.get_by_operator_id(operator_id).await {
+        Ok(mut existing) => {
+            existing.password_hash = hash;
+            existing.updated_at = now;
+            creds.update(existing).await.context("failed to update operator password")?;
+        }
+        Err(_) => {
+            let c = OperatorCredentials {
+                operator_id,
+                password_hash: hash,
+                created_at: now,
+                updated_at: now,
+            };
+            creds.create(c).await.context("failed to create operator credentials")?;
+        }
+    }
+    Ok(())
+}
+
+async fn upsert_default_tenant(tenants: Arc<dyn TenantRepository>) -> anyhow::Result<Tenant> {
+    if let Ok(t) = tenants.get_by_slug("default").await {
         return Ok(t);
     }
     let now = OffsetDateTime::now_utc();
-    let tenant = Tenant {
-        id: SYSTEM_TENANT_ID,
-        name: "System".into(),
-        slug: "system".into(),
+    let t = Tenant {
+        id: Uuid::new_v4(),
+        name: "Default".into(),
+        slug: "default".into(),
         settings: serde_json::json!({}),
         created_at: now,
         updated_at: now,
         deleted_at: None,
     };
-    tenants.create(tenant).await.context("failed to create system tenant")
+    tenants.create(t).await.context("failed to create default tenant")
+}
+
+async fn seed_operator_permission_catalog(
+    permissions: Arc<dyn OperatorPermissionRepository>,
+) -> anyhow::Result<()> {
+    let now = OffsetDateTime::now_utc();
+    let existing: std::collections::HashSet<(String, String)> = permissions
+        .list()
+        .await
+        .context("failed to list existing operator permissions")?
+        .into_iter()
+        .map(|p| (p.resource, p.action))
+        .collect();
+    for resource in ALLOWED_OPERATOR_RESOURCES {
+        for action in ALLOWED_OPERATOR_ACTIONS {
+            if existing.contains(&((*resource).into(), (*action).into())) {
+                continue;
+            }
+            let p = OperatorPermission {
+                id: Uuid::new_v4(),
+                resource: (*resource).into(),
+                action: (*action).into(),
+                description: None,
+                created_at: now,
+            };
+            permissions
+                .create(p)
+                .await
+                .with_context(|| format!("failed to create permission {resource}:{action}"))?;
+        }
+    }
+    Ok(())
 }
 
 async fn upsert_super_admin_role(
-    roles: Arc<dyn RoleRepository>,
-    permissions: Arc<dyn PermissionRepository>,
-    tenant_id: Uuid,
-) -> anyhow::Result<(Role, Permission)> {
+    roles: Arc<dyn OperatorRoleRepository>,
+    permissions: Arc<dyn OperatorPermissionRepository>,
+) -> anyhow::Result<OperatorRole> {
     let now = OffsetDateTime::now_utc();
-
-    let role = match roles.get_by_name("super_admin", tenant_id).await {
-        Ok(r) => r,
+    let role = match roles.get_by_name("super_admin", None).await {
+        Ok(existing) => existing,
         Err(_) => {
-            let r = Role {
+            let r = OperatorRole {
                 id: Uuid::new_v4(),
-                tenant_id,
+                tenant_id: None,
                 name: "super_admin".into(),
                 description: Some("Full system access".into()),
-                parent_role_id: None,
                 created_at: now,
                 updated_at: now,
             };
@@ -133,105 +192,60 @@ async fn upsert_super_admin_role(
         }
     };
 
-    let existing_perms = permissions.get_permissions_for_role(role.id, tenant_id).await?;
-    let perm = if let Some(p) = existing_perms.into_iter().find(|p| p.resource == "*") {
-        p
-    } else {
-        let all_perms = permissions.list(tenant_id).await?;
-        let perm = if let Some(p) = all_perms.into_iter().find(|p| p.resource == "*" && p.action == "*") {
-            p
-        } else {
-            let p = Permission {
-                id: Uuid::new_v4(),
-                tenant_id,
-                resource: "*".into(),
-                action: "*".into(),
-                description: Some("Wildcard — full access".into()),
-                created_at: now,
-            };
-            permissions.create(p).await.context("failed to create wildcard permission")?
-        };
-        permissions
-            .assign_permission_to_role(role.id, perm.id, tenant_id)
+    // Always reconcile assignments so new permissions added to the catalog
+    // (e.g. after adding a resource) are picked up on the next `admin init` run.
+    let all_perms = permissions
+        .list()
+        .await
+        .context("failed to list operator permissions")?;
+    for perm in all_perms {
+        roles
+            .assign_permission(role.id, perm.id)
             .await
-            .context("failed to assign wildcard permission to super_admin")?;
-        perm
-    };
-
-    Ok((role, perm))
-}
-
-async fn create_admin_user(
-    users: Arc<dyn UserRepository>,
-    tenant_id: Uuid,
-    email: &str,
-) -> anyhow::Result<User> {
-    if let Ok(u) = users.get_by_email(email, tenant_id).await {
-        return Ok(u);
+            .context("failed to assign permission to super_admin role")?;
     }
-    let now = OffsetDateTime::now_utc();
-    let user = User {
-        id: Uuid::new_v4(),
-        tenant_id,
-        email: email.into(),
-        email_verified: true,
-        name: Some("Admin".into()),
-        given_name: None,
-        family_name: None,
-        picture_url: None,
-        status: UserStatus::Active,
-        created_at: now,
-        updated_at: now,
-        last_login_at: None,
-        deleted_at: None,
-    };
-    users.create(user).await.context("failed to create admin user")
+
+    Ok(role)
 }
 
-async fn upsert_admin_app(
-    applications: Arc<dyn ApplicationRepository>,
-    tenant_id: Uuid,
-    redirect_uris: Vec<String>,
-) -> anyhow::Result<Application> {
+async fn upsert_viewer_role(
+    roles: Arc<dyn OperatorRoleRepository>,
+    permissions: Arc<dyn OperatorPermissionRepository>,
+) -> anyhow::Result<OperatorRole> {
     let now = OffsetDateTime::now_utc();
-    if let Ok(mut app) = applications.get_by_client_id(ADMIN_CLIENT_ID, tenant_id).await {
-        // Merge in any new redirect URIs without duplicates
-        for uri in &redirect_uris {
-            if !app.redirect_uris.contains(uri) {
-                app.redirect_uris.push(uri.clone());
-            }
+    let role = match roles.get_by_name("viewer", None).await {
+        Ok(existing) => existing,
+        Err(_) => {
+            let r = OperatorRole {
+                id: Uuid::new_v4(),
+                tenant_id: None,
+                name: "viewer".into(),
+                description: Some("Read-only access to all resources".into()),
+                created_at: now,
+                updated_at: now,
+            };
+            roles.create(r).await.context("failed to create viewer role")?
         }
-        app.updated_at = now;
-        return applications.update(app).await.context("failed to update admin application");
-    }
-    let app = Application {
-        id: Uuid::new_v4(),
-        tenant_id,
-        name: "Irongate Admin UI".into(),
-        client_id: ADMIN_CLIENT_ID.into(),
-        client_secret_hash: None,
-        app_type: AppType::Spa,
-        redirect_uris,
-        allowed_scopes: vec!["openid".into(), "profile".into(), "admin:*".into()],
-        grant_types: vec!["authorization_code".into()],
-        access_token_ttl: 3600,
-        refresh_token_ttl: 86400 * 7,
-        created_at: now,
-        updated_at: now,
-        deleted_at: None,
     };
-    applications.create(app).await.context("failed to create admin application")
+
+    let all_perms = permissions
+        .list()
+        .await
+        .context("failed to list operator permissions")?;
+    for perm in all_perms {
+        if perm.action == "read" || perm.action == "list" {
+            roles
+                .assign_permission(role.id, perm.id)
+                .await
+                .context("failed to assign permission to viewer role")?;
+        }
+    }
+
+    Ok(role)
 }
 
 fn flag<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
     args.windows(2)
         .find(|w| w[0] == name)
         .map(|w| w[1].as_str())
-}
-
-fn flags<'a>(args: &'a [String], name: &str) -> Vec<&'a str> {
-    args.windows(2)
-        .filter(|w| w[0] == name)
-        .map(|w| w[1].as_str())
-        .collect()
 }

@@ -3,9 +3,11 @@ use uuid::Uuid;
 
 use crate::errors::StoreError;
 use crate::types::{
-    Application, AuditEvent, Group, Identity, IdpConfig, MagicLink, PasskeyCredential, Permission,
-    RefreshToken, Role, Session, Tenant, User, UserCredentials,
+    Application, AuditEvent, ClaimDefinition, ClaimType, Group, GroupClaim, Identity, IdpConfig,
+    MagicLink, Operator, OperatorCredentials, OperatorPermission, OperatorRole, PasskeyCredential,
+    RefreshToken, Session, Tenant, User, UserClaim, UserCredentials,
 };
+use time::OffsetDateTime;
 
 // ── UserRepository ────────────────────────────────────────────────────────────
 
@@ -97,54 +99,188 @@ pub trait RefreshTokenRepository: Send + Sync {
     async fn revoke_all_for_session(&self, session_id: Uuid) -> Result<u64, StoreError>;
 }
 
-// ── RoleRepository ────────────────────────────────────────────────────────────
+// ── Claim repositories ────────────────────────────────────────────────────────
 
-#[async_trait]
-pub trait RoleRepository: Send + Sync {
-    async fn create(&self, role: Role) -> Result<Role, StoreError>;
-    async fn get_by_id(&self, id: Uuid, tenant_id: Uuid) -> Result<Role, StoreError>;
-    async fn get_by_name(&self, name: &str, tenant_id: Uuid) -> Result<Role, StoreError>;
-    async fn update(&self, role: Role) -> Result<Role, StoreError>;
-    async fn delete(&self, id: Uuid, tenant_id: Uuid) -> Result<(), StoreError>;
-    async fn list(&self, tenant_id: Uuid) -> Result<Vec<Role>, StoreError>;
-    async fn get_roles_for_user(
-        &self,
-        user_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<Vec<Role>, StoreError>;
-    async fn assign_role_to_user(
-        &self,
-        user_id: Uuid,
-        role_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<(), StoreError>;
-    async fn remove_role_from_user(
-        &self,
-        user_id: Uuid,
-        role_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<(), StoreError>;
+/// One row of group-derived claim data for a specific user, resolved across
+/// `group_members → groups → group_claims → claim_definitions`. Returned by
+/// `GroupClaimRepository::list_for_user_in_app`. The caller uses
+/// `(group_priority, group_created_at)` to break ties for scalar claims.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedGroupClaim {
+    pub claim_def_id: Uuid,
+    pub claim_key: String,
+    pub claim_type: ClaimType,
+    pub group_id: Uuid,
+    pub group_priority: i32,
+    pub group_created_at: OffsetDateTime,
+    pub value: String,
 }
 
-// ── PermissionRepository ──────────────────────────────────────────────────────
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedUserClaim {
+    pub claim_def_id: Uuid,
+    pub claim_key: String,
+    pub claim_type: ClaimType,
+    pub value: String,
+}
 
 #[async_trait]
-pub trait PermissionRepository: Send + Sync {
-    async fn create(&self, permission: Permission) -> Result<Permission, StoreError>;
-    async fn get_by_id(&self, id: Uuid, tenant_id: Uuid) -> Result<Permission, StoreError>;
-    async fn list(&self, tenant_id: Uuid) -> Result<Vec<Permission>, StoreError>;
-    async fn get_permissions_for_role(
+pub trait ClaimDefinitionRepository: Send + Sync {
+    async fn create(&self, def: ClaimDefinition) -> Result<ClaimDefinition, StoreError>;
+    async fn get_by_id(&self, id: Uuid) -> Result<ClaimDefinition, StoreError>;
+    async fn get_by_app_and_key(
         &self,
-        role_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<Vec<Permission>, StoreError>;
-    async fn assign_permission_to_role(
+        application_id: Uuid,
+        key: &str,
+    ) -> Result<ClaimDefinition, StoreError>;
+    async fn list_for_app(
         &self,
-        role_id: Uuid,
-        permission_id: Uuid,
+        application_id: Uuid,
+    ) -> Result<Vec<ClaimDefinition>, StoreError>;
+    /// Every claim def for every application in the tenant. Used by the global
+    /// Claims management page.
+    async fn list_for_tenant(
+        &self,
         tenant_id: Uuid,
+    ) -> Result<Vec<ClaimDefinition>, StoreError>;
+    async fn update(&self, def: ClaimDefinition) -> Result<ClaimDefinition, StoreError>;
+    async fn delete(&self, id: Uuid) -> Result<(), StoreError>;
+}
+
+#[async_trait]
+pub trait GroupClaimRepository: Send + Sync {
+    async fn assign(
+        &self,
+        group_id: Uuid,
+        claim_def_id: Uuid,
+        value: &str,
+    ) -> Result<GroupClaim, StoreError>;
+    async fn revoke(
+        &self,
+        group_id: Uuid,
+        claim_def_id: Uuid,
+        value: &str,
     ) -> Result<(), StoreError>;
-    async fn delete(&self, id: Uuid, tenant_id: Uuid) -> Result<(), StoreError>;
+    async fn list_for_group(&self, group_id: Uuid) -> Result<Vec<GroupClaim>, StoreError>;
+    async fn list_for_claim_def(
+        &self,
+        claim_def_id: Uuid,
+    ) -> Result<Vec<GroupClaim>, StoreError>;
+    /// Returns every group-claim row that flows into a token minted for `user`
+    /// against `application`. Joins through `group_members → groups →
+    /// group_claims → claim_definitions` and filters claim defs to the app.
+    async fn list_for_user_in_app(
+        &self,
+        user_id: Uuid,
+        application_id: Uuid,
+    ) -> Result<Vec<ResolvedGroupClaim>, StoreError>;
+}
+
+#[async_trait]
+pub trait UserClaimRepository: Send + Sync {
+    async fn assign(
+        &self,
+        user_id: Uuid,
+        claim_def_id: Uuid,
+        value: &str,
+    ) -> Result<UserClaim, StoreError>;
+    async fn revoke(
+        &self,
+        user_id: Uuid,
+        claim_def_id: Uuid,
+        value: &str,
+    ) -> Result<(), StoreError>;
+    async fn list_for_user(&self, user_id: Uuid) -> Result<Vec<UserClaim>, StoreError>;
+    async fn list_for_user_in_app(
+        &self,
+        user_id: Uuid,
+        application_id: Uuid,
+    ) -> Result<Vec<ResolvedUserClaim>, StoreError>;
+}
+
+// ── OperatorPermissionRepository ──────────────────────────────────────────────
+
+#[async_trait]
+pub trait OperatorPermissionRepository: Send + Sync {
+    async fn create(&self, p: OperatorPermission) -> Result<OperatorPermission, StoreError>;
+    async fn list(&self) -> Result<Vec<OperatorPermission>, StoreError>;
+    async fn get_by_id(&self, id: Uuid) -> Result<OperatorPermission, StoreError>;
+    async fn get_by_resource_action(
+        &self,
+        resource: &str,
+        action: &str,
+    ) -> Result<OperatorPermission, StoreError>;
+}
+
+// ── OperatorRoleRepository ────────────────────────────────────────────────────
+
+#[async_trait]
+pub trait OperatorRoleRepository: Send + Sync {
+    async fn create(&self, r: OperatorRole) -> Result<OperatorRole, StoreError>;
+    async fn get_by_id(&self, id: Uuid) -> Result<OperatorRole, StoreError>;
+    /// Look up a role by name within a scope. `tenant_id = None` returns the
+    /// global role with that name; `Some(id)` returns the role scoped to that tenant.
+    async fn get_by_name(
+        &self,
+        name: &str,
+        tenant_id: Option<Uuid>,
+    ) -> Result<OperatorRole, StoreError>;
+    /// List roles. `None` returns all roles (global + every tenant); pass a
+    /// scope filter to narrow.
+    async fn list(
+        &self,
+        scope: OperatorRoleScope,
+    ) -> Result<Vec<OperatorRole>, StoreError>;
+    async fn update(&self, r: OperatorRole) -> Result<OperatorRole, StoreError>;
+    async fn delete(&self, id: Uuid) -> Result<(), StoreError>;
+    async fn assign_permission(&self, role_id: Uuid, permission_id: Uuid)
+        -> Result<(), StoreError>;
+    async fn revoke_permission(&self, role_id: Uuid, permission_id: Uuid) -> Result<(), StoreError>;
+    async fn list_permissions(&self, role_id: Uuid) -> Result<Vec<OperatorPermission>, StoreError>;
+    async fn assign_to_operator(
+        &self,
+        operator_id: Uuid,
+        role_id: Uuid,
+    ) -> Result<(), StoreError>;
+    async fn revoke_from_operator(
+        &self,
+        operator_id: Uuid,
+        role_id: Uuid,
+    ) -> Result<(), StoreError>;
+    async fn list_for_operator(&self, operator_id: Uuid) -> Result<Vec<OperatorRole>, StoreError>;
+    /// All permissions an operator effectively holds across every role assignment.
+    /// Returns the union of permissions from global roles and tenant-scoped roles
+    /// (regardless of tenant). Callers that need to authorize a specific tenant
+    /// should use `list_permissions_for_operator_in_tenant`.
+    async fn list_permissions_for_operator(
+        &self,
+        operator_id: Uuid,
+    ) -> Result<Vec<OperatorPermission>, StoreError>;
+    /// Permissions an operator effectively holds for actions targeting `tenant_id`:
+    /// the union of permissions granted by their global roles and by their roles
+    /// scoped to that tenant.
+    async fn list_permissions_for_operator_in_tenant(
+        &self,
+        operator_id: Uuid,
+        tenant_id: Uuid,
+    ) -> Result<Vec<OperatorPermission>, StoreError>;
+    /// Permissions an operator effectively holds for global (cross-tenant) actions,
+    /// i.e. only those granted by roles with `tenant_id IS NULL`.
+    async fn list_permissions_for_operator_global(
+        &self,
+        operator_id: Uuid,
+    ) -> Result<Vec<OperatorPermission>, StoreError>;
+}
+
+/// Scope filter for listing operator roles.
+#[derive(Debug, Clone, Copy)]
+pub enum OperatorRoleScope {
+    /// Every role (global + every tenant).
+    All,
+    /// Only global (cross-tenant) roles.
+    Global,
+    /// Only roles scoped to the given tenant.
+    Tenant(Uuid),
 }
 
 // ── IdpConfigRepository ───────────────────────────────────────────────────────
@@ -172,6 +308,30 @@ pub trait AuditRepository: Send + Sync {
 }
 
 // ── UserCredentialsRepository ─────────────────────────────────────────────────
+
+// ── OperatorRepository ────────────────────────────────────────────────────────
+
+#[async_trait]
+pub trait OperatorRepository: Send + Sync {
+    async fn create(&self, operator: Operator) -> Result<Operator, StoreError>;
+    async fn get_by_id(&self, id: Uuid) -> Result<Operator, StoreError>;
+    async fn get_by_email(&self, email: &str) -> Result<Operator, StoreError>;
+    async fn update(&self, operator: Operator) -> Result<Operator, StoreError>;
+    async fn soft_delete(&self, id: Uuid) -> Result<(), StoreError>;
+    async fn list(&self, limit: i64, offset: i64) -> Result<Vec<Operator>, StoreError>;
+    async fn touch_last_login(&self, id: Uuid) -> Result<(), StoreError>;
+}
+
+// ── OperatorCredentialsRepository ─────────────────────────────────────────────
+
+#[async_trait]
+pub trait OperatorCredentialsRepository: Send + Sync {
+    async fn create(&self, creds: OperatorCredentials) -> Result<OperatorCredentials, StoreError>;
+    async fn get_by_operator_id(&self, operator_id: Uuid)
+        -> Result<OperatorCredentials, StoreError>;
+    async fn update(&self, creds: OperatorCredentials) -> Result<OperatorCredentials, StoreError>;
+    async fn delete(&self, operator_id: Uuid) -> Result<(), StoreError>;
+}
 
 #[async_trait]
 pub trait UserCredentialsRepository: Send + Sync {

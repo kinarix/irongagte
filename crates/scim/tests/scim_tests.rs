@@ -89,6 +89,7 @@ fn make_user() -> User {
         family_name: None,
         picture_url: None,
         status: UserStatus::Active,
+        attributes: serde_json::json!({}),
         created_at: now,
         updated_at: now,
         last_login_at: None,
@@ -103,6 +104,7 @@ fn make_group() -> Group {
         tenant_id: Uuid::new_v4(),
         display_name: "Engineering".into(),
         external_id: None,
+        priority: 0,
         created_at: now,
         updated_at: now,
     }

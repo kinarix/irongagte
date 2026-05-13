@@ -65,6 +65,7 @@ fn make_user(tenant_id: Uuid) -> User {
         family_name: None,
         picture_url: None,
         status: UserStatus::Active,
+        attributes: serde_json::json!({}),
         created_at: OffsetDateTime::now_utc(),
         updated_at: OffsetDateTime::now_utc(),
         last_login_at: None,
@@ -156,7 +157,7 @@ async fn provision_or_link_jit_provisions_new_user_for_unknown_email() {
     users
         .expect_create()
         .once()
-        .returning(|u| Ok(u));
+        .returning(Ok);
 
     let mut identities = MockIdentityRepo::new();
     identities
@@ -166,7 +167,7 @@ async fn provision_or_link_jit_provisions_new_user_for_unknown_email() {
     identities
         .expect_create()
         .once()
-        .returning(|i| Ok(i));
+        .returning(Ok);
 
     let svc = make_service(users, identities);
     let federated = make_federated(true);
@@ -197,7 +198,7 @@ async fn provision_or_link_links_identity_to_existing_user_with_verified_email()
     identities
         .expect_create()
         .once()
-        .returning(|i| Ok(i));
+        .returning(Ok);
 
     let svc = make_service(users, identities);
     let federated = make_federated(true);
@@ -239,7 +240,7 @@ async fn provision_or_link_rejects_unverified_email_when_user_exists() {
 async fn provision_or_link_propagates_identity_repo_error() {
     let tenant_id = Uuid::new_v4();
 
-    let mut users = MockUserRepo::new();
+    let users = MockUserRepo::new();
     let mut identities = MockIdentityRepo::new();
     identities
         .expect_get_by_provider()

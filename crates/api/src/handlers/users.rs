@@ -76,6 +76,7 @@ pub async fn create_user(
         family_name: req.family_name,
         picture_url: None,
         status: UserStatus::Pending,
+        attributes: serde_json::json!({}),
         created_at: now,
         updated_at: now,
         last_login_at: None,

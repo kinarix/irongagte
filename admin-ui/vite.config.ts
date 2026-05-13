@@ -14,6 +14,8 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    port: 5174,
+    strictPort: true,
     proxy: {
       '/admin/api': 'http://localhost:8081',
       '/oauth2': 'http://localhost:8081',

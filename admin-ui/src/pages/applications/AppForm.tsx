@@ -4,7 +4,8 @@ import { useParams, useNavigate } from '@tanstack/react-router'
 import { useTenant } from '@/context/tenant'
 import { Button } from '@/components/ui/button'
 import { getApplication, createApplication, updateApplication } from '@/api/applications'
-import { ArrowLeft } from 'lucide-react'
+import { listClaimDefinitions } from '@/api/claims'
+import { ArrowLeft, ExternalLink } from 'lucide-react'
 
 const GRANT_TYPES = ['authorization_code', 'client_credentials', 'refresh_token', 'device_code']
 const APP_TYPES = ['web', 'spa', 'native', 'service']
@@ -22,10 +23,17 @@ export default function AppForm() {
   const [redirectUris, setRedirectUris] = useState('')
   const [allowedScopes, setAllowedScopes] = useState('openid profile email')
   const [grantTypes, setGrantTypes] = useState<string[]>(['authorization_code', 'refresh_token'])
+  const [claimPrefix, setClaimPrefix] = useState('')
 
   const { data: existing } = useQuery({
     queryKey: ['application', tenantId, appId],
     queryFn: () => getApplication(tenantId!, appId!),
+    enabled: isEdit && !!tenantId && !!appId,
+  })
+
+  const { data: defs } = useQuery({
+    queryKey: ['claim-definitions', tenantId, appId],
+    queryFn: () => listClaimDefinitions(tenantId!, appId!),
     enabled: isEdit && !!tenantId && !!appId,
   })
 
@@ -37,23 +45,24 @@ export default function AppForm() {
       setRedirectUris(existing.redirect_uris.join('\n'))
       setAllowedScopes(existing.allowed_scopes.join(' '))
       setGrantTypes(existing.grant_types)
+      setClaimPrefix(existing.claim_prefix)
     }
   }, [existing])
 
   const saveMut = useMutation({
     mutationFn: () => {
-      const payload = {
+      const basePayload = {
         name,
-        client_id: clientId,
         app_type: appType,
         redirect_uris: redirectUris.split('\n').map((s) => s.trim()).filter(Boolean),
         allowed_scopes: allowedScopes.split(/\s+/).filter(Boolean),
         grant_types: grantTypes,
+        claim_prefix: claimPrefix,
       }
       if (isEdit) {
-        return updateApplication(tenantId!, appId!, payload)
+        return updateApplication(tenantId!, appId!, basePayload)
       }
-      return createApplication({ tenant_id: tenantId!, ...payload })
+      return createApplication({ tenant_id: tenantId!, ...basePayload })
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['applications', tenantId] })
@@ -66,6 +75,8 @@ export default function AppForm() {
   }
 
   if (!tenantId) return <p className="text-sm text-gray-500">Select a tenant first.</p>
+
+  const defCount = defs?.claim_definitions.length ?? 0
 
   return (
     <div className="max-w-xl">
@@ -90,15 +101,11 @@ export default function AppForm() {
           />
         </Field>
 
-        <Field label="Client ID *">
-          <input
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-            className={inputCls}
-            placeholder="my-app"
-            disabled={isEdit}
-          />
-        </Field>
+        {isEdit && (
+          <Field label="Client ID">
+            <input value={clientId} readOnly className={`${inputCls} bg-gray-50 text-gray-600`} />
+          </Field>
+        )}
 
         <Field label="App Type">
           <select
@@ -146,8 +153,42 @@ export default function AppForm() {
           </div>
         </Field>
 
+        <Field label="Claim Prefix *">
+          <input
+            value={claimPrefix}
+            onChange={(e) => setClaimPrefix(e.target.value)}
+            className={`${inputCls} font-mono`}
+            placeholder="e.g. billing"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Custom JWT claims for this app are emitted as{' '}
+            <code>{claimPrefix || 'prefix'}:&lt;key&gt;</code>. Letters, digits, underscore, hyphen.
+            Must not collide with reserved JWT claim names.
+          </p>
+        </Field>
+
+        {isEdit && (
+          <Field label="Claim Definitions">
+            <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded px-3 py-2">
+              <span className="text-sm text-gray-600">
+                {defCount} claim {defCount === 1 ? 'definition' : 'definitions'} for this app
+              </span>
+              <button
+                type="button"
+                onClick={() => void navigate({ to: '/claims' })}
+                className="flex items-center gap-1 text-sm text-gray-700 hover:text-gray-900"
+              >
+                Manage <ExternalLink size={12} />
+              </button>
+            </div>
+          </Field>
+        )}
+
         <div className="flex gap-2 pt-2">
-          <Button onClick={() => saveMut.mutate()} disabled={!name || !clientId || saveMut.isPending}>
+          <Button
+            onClick={() => saveMut.mutate()}
+            disabled={!name || !claimPrefix || saveMut.isPending}
+          >
             {saveMut.isPending ? 'Saving…' : 'Save'}
           </Button>
           <Button variant="outline" onClick={() => void navigate({ to: '/applications' })}>
@@ -155,9 +196,7 @@ export default function AppForm() {
           </Button>
         </div>
         {saveMut.isError && (
-          <p className="text-sm text-red-600">
-            {(saveMut.error as Error).message}
-          </p>
+          <p className="text-sm text-red-600">{(saveMut.error as Error).message}</p>
         )}
       </div>
     </div>

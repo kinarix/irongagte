@@ -1,135 +1,113 @@
 use std::{
-    collections::HashSet,
+    collections::{BTreeSet, HashMap},
     sync::Arc,
 };
 
 use irongate_core::{
-    errors::{AuthzError, StoreError},
-    repositories::{PermissionRepository, RoleRepository},
-    types::{Permission, Role},
+    errors::AuthzError,
+    repositories::{ClaimDefinitionRepository, GroupClaimRepository, UserClaimRepository},
+    types::ClaimType,
 };
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 pub struct AuthzService {
-    roles: Arc<dyn RoleRepository>,
-    permissions: Arc<dyn PermissionRepository>,
+    claim_defs: Arc<dyn ClaimDefinitionRepository>,
+    group_claims: Arc<dyn GroupClaimRepository>,
+    user_claims: Arc<dyn UserClaimRepository>,
 }
 
 impl AuthzService {
     pub fn new(
-        roles: Arc<dyn RoleRepository>,
-        permissions: Arc<dyn PermissionRepository>,
+        claim_defs: Arc<dyn ClaimDefinitionRepository>,
+        group_claims: Arc<dyn GroupClaimRepository>,
+        user_claims: Arc<dyn UserClaimRepository>,
     ) -> Self {
-        Self { roles, permissions }
+        Self {
+            claim_defs,
+            group_claims,
+            user_claims,
+        }
     }
 
-    pub async fn check_permission(
+    /// Resolve every custom claim that should appear in a token minted for
+    /// `user` against `application`. Returns a map keyed by
+    /// `<claim_prefix>:<claim.key>`.
+    ///
+    /// Rules (mirrors the model in `migrations/postgres/0024_..0027_*`):
+    ///   * `scalar` — user-direct value wins. Otherwise the group with the
+    ///     highest `priority` wins; ties resolved by `created_at` ascending.
+    ///   * `multi`  — values from all sources (groups + user-direct) are
+    ///     merged into a deduped JSON array of strings.
+    ///   * Claims with no assignment at all are omitted entirely.
+    pub async fn resolve_claims_for_app(
         &self,
         user_id: Uuid,
-        tenant_id: Uuid,
-        resource: &str,
-        action: &str,
-    ) -> Result<bool, AuthzError> {
-        let perms = self.get_user_permissions(user_id, tenant_id).await?;
-        Ok(perms.iter().any(|p| p.resource == resource && p.action == action))
-    }
+        application_id: Uuid,
+        claim_prefix: &str,
+    ) -> Result<HashMap<String, Value>, AuthzError> {
+        let defs = self
+            .claim_defs
+            .list_for_app(application_id)
+            .await
+            .map_err(AuthzError::Store)?;
+        if defs.is_empty() {
+            return Ok(HashMap::new());
+        }
 
-    pub async fn get_user_permissions(
-        &self,
-        user_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<Vec<Permission>, AuthzError> {
-        let direct_roles = self
-            .roles
-            .get_roles_for_user(user_id, tenant_id)
+        let group_rows = self
+            .group_claims
+            .list_for_user_in_app(user_id, application_id)
+            .await
+            .map_err(AuthzError::Store)?;
+        let user_rows = self
+            .user_claims
+            .list_for_user_in_app(user_id, application_id)
             .await
             .map_err(AuthzError::Store)?;
 
-        let all_roles = self.expand_role_hierarchy(direct_roles, tenant_id).await?;
+        let mut out: HashMap<String, Value> = HashMap::with_capacity(defs.len());
 
-        let mut seen: HashSet<Uuid> = HashSet::new();
-        let mut permissions: Vec<Permission> = Vec::new();
+        for def in defs {
+            let token_key = format!("{claim_prefix}:{}", def.key);
+            match def.claim_type {
+                ClaimType::Scalar => {
+                    // User-direct wins.
+                    let user_value = user_rows
+                        .iter()
+                        .find(|r| r.claim_def_id == def.id)
+                        .map(|r| r.value.clone());
 
-        for role in all_roles {
-            let role_perms = self
-                .permissions
-                .get_permissions_for_role(role.id, tenant_id)
-                .await
-                .map_err(AuthzError::Store)?;
+                    if let Some(v) = user_value {
+                        out.insert(token_key, Value::String(v));
+                        continue;
+                    }
 
-            for perm in role_perms {
-                if seen.insert(perm.id) {
-                    permissions.push(perm);
-                }
-            }
-        }
-
-        Ok(permissions)
-    }
-
-    pub async fn get_user_roles(
-        &self,
-        user_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<Vec<Role>, AuthzError> {
-        self.roles
-            .get_roles_for_user(user_id, tenant_id)
-            .await
-            .map_err(AuthzError::Store)
-    }
-
-    pub async fn assign_role(
-        &self,
-        user_id: Uuid,
-        role_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<(), AuthzError> {
-        self.roles
-            .assign_role_to_user(user_id, role_id, tenant_id)
-            .await
-            .map_err(AuthzError::Store)
-    }
-
-    pub async fn remove_role(
-        &self,
-        user_id: Uuid,
-        role_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<(), AuthzError> {
-        self.roles
-            .remove_role_from_user(user_id, role_id, tenant_id)
-            .await
-            .map_err(AuthzError::Store)
-    }
-
-    /// Expands a set of roles to include all ancestors via parent_role_id.
-    async fn expand_role_hierarchy(
-        &self,
-        initial: Vec<Role>,
-        tenant_id: Uuid,
-    ) -> Result<Vec<Role>, AuthzError> {
-        let mut all: Vec<Role> = Vec::new();
-        let mut visited: HashSet<Uuid> = HashSet::new();
-        let mut queue = initial;
-
-        while let Some(role) = queue.pop() {
-            if !visited.insert(role.id) {
-                continue;
-            }
-
-            if let Some(parent_id) = role.parent_role_id {
-                if !visited.contains(&parent_id) {
-                    match self.roles.get_by_id(parent_id, tenant_id).await {
-                        Ok(parent) => queue.push(parent),
-                        Err(StoreError::NotFound(_)) => {}
-                        Err(e) => return Err(AuthzError::Store(e)),
+                    // Group rows are already returned in
+                    // (priority DESC, created_at ASC) order by the repo.
+                    if let Some(winner) =
+                        group_rows.iter().find(|r| r.claim_def_id == def.id)
+                    {
+                        out.insert(token_key, Value::String(winner.value.clone()));
                     }
                 }
+                ClaimType::Multi => {
+                    let mut bag: BTreeSet<String> = BTreeSet::new();
+                    for r in group_rows.iter().filter(|r| r.claim_def_id == def.id) {
+                        bag.insert(r.value.clone());
+                    }
+                    for r in user_rows.iter().filter(|r| r.claim_def_id == def.id) {
+                        bag.insert(r.value.clone());
+                    }
+                    if bag.is_empty() {
+                        continue;
+                    }
+                    let arr: Vec<String> = bag.into_iter().collect();
+                    out.insert(token_key, json!(arr));
+                }
             }
-
-            all.push(role);
         }
 
-        Ok(all)
+        Ok(out)
     }
 }

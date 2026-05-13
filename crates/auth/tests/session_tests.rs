@@ -161,7 +161,7 @@ async fn rotate_refresh_token_success() {
     mock_tokens
         .expect_create()
         .once()
-        .returning(|t| Ok(t));
+        .returning(Ok);
 
     let svc = SessionService::new(Arc::new(mock_sessions), Arc::new(mock_tokens));
     let result = svc.rotate_refresh_token(&raw_token, tenant_id, 86400).await;

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use irongate_core::{Application, AppType, errors::StoreError};
+use irongate_core::{errors::StoreError, AppType, Application};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -37,6 +37,7 @@ fn row_to_application(row: &sqlx::postgres::PgRow) -> Result<Application, StoreE
         grant_types,
         access_token_ttl: row.try_get("access_token_ttl").map_err(map_row_err)?,
         refresh_token_ttl: row.try_get("refresh_token_ttl").map_err(map_row_err)?,
+        claim_prefix: row.try_get("claim_prefix").map_err(map_row_err)?,
         created_at: row.try_get("created_at").map_err(map_row_err)?,
         updated_at: row.try_get("updated_at").map_err(map_row_err)?,
         deleted_at: row.try_get("deleted_at").map_err(map_row_err)?,
@@ -57,8 +58,8 @@ impl irongate_core::repositories::ApplicationRepository for PgApplicationRepo {
             "INSERT INTO applications
              (id, tenant_id, name, client_id, client_secret_hash, app_type,
               redirect_uris, allowed_scopes, grant_types,
-              access_token_ttl, refresh_token_ttl, created_at, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+              access_token_ttl, refresh_token_ttl, claim_prefix, created_at, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
              RETURNING *",
         )
         .bind(app.id)
@@ -72,6 +73,7 @@ impl irongate_core::repositories::ApplicationRepository for PgApplicationRepo {
         .bind(&grant_types)
         .bind(app.access_token_ttl)
         .bind(app.refresh_token_ttl)
+        .bind(&app.claim_prefix)
         .bind(app.created_at)
         .bind(app.updated_at)
         .fetch_one(&self.pool)
@@ -122,8 +124,9 @@ impl irongate_core::repositories::ApplicationRepository for PgApplicationRepo {
             "UPDATE applications
              SET name = $1, client_secret_hash = $2, app_type = $3,
                  redirect_uris = $4, allowed_scopes = $5, grant_types = $6,
-                 access_token_ttl = $7, refresh_token_ttl = $8, updated_at = $9
-             WHERE id = $10 AND tenant_id = $11 AND deleted_at IS NULL
+                 access_token_ttl = $7, refresh_token_ttl = $8,
+                 claim_prefix = $9, updated_at = $10
+             WHERE id = $11 AND tenant_id = $12 AND deleted_at IS NULL
              RETURNING *",
         )
         .bind(&app.name)
@@ -134,6 +137,7 @@ impl irongate_core::repositories::ApplicationRepository for PgApplicationRepo {
         .bind(&grant_types)
         .bind(app.access_token_ttl)
         .bind(app.refresh_token_ttl)
+        .bind(&app.claim_prefix)
         .bind(app.updated_at)
         .bind(app.id)
         .bind(app.tenant_id)

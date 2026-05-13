@@ -7,9 +7,10 @@ use irongate_api::{config::Settings, router::build_router, state::AppState};
 use irongate_auth::{PasswordService, SessionService};
 use irongate_authz::AuthzService;
 use irongate_core::repositories::{
-    ApplicationRepository, AuditRepository, GroupRepository, IdpConfigRepository,
-    IdentityRepository, PasskeyRepository, PermissionRepository, RefreshTokenRepository,
-    RoleRepository, TenantRepository, UserRepository,
+    ApplicationRepository, AuditRepository, ClaimDefinitionRepository, GroupClaimRepository,
+    GroupRepository, IdentityRepository, IdpConfigRepository, OperatorCredentialsRepository,
+    OperatorPermissionRepository, OperatorRepository, OperatorRoleRepository, PasskeyRepository,
+    RefreshTokenRepository, TenantRepository, UserClaimRepository, UserRepository,
 };
 use irongate_crypto::keys::generate_rsa_key;
 use irongate_scim::{groups::GroupState, router::scim_router, users::UserState};
@@ -47,19 +48,30 @@ async fn main() -> anyhow::Result<()> {
     let tenants: Arc<dyn TenantRepository> = Arc::new(pg.tenants());
     let applications: Arc<dyn ApplicationRepository> = Arc::new(pg.applications());
     let refresh_tokens: Arc<dyn RefreshTokenRepository> = Arc::new(pg.refresh_tokens());
-    let roles: Arc<dyn RoleRepository> = Arc::new(pg.roles());
-    let permissions: Arc<dyn PermissionRepository> = Arc::new(pg.permissions());
     let groups: Arc<dyn GroupRepository> = Arc::new(pg.groups());
+    let claim_definitions: Arc<dyn ClaimDefinitionRepository> = Arc::new(pg.claim_definitions());
+    let group_claims: Arc<dyn GroupClaimRepository> = Arc::new(pg.group_claims());
+    let user_claims: Arc<dyn UserClaimRepository> = Arc::new(pg.user_claims());
     let passkeys: Arc<dyn PasskeyRepository> = Arc::new(pg.passkeys());
     let identities: Arc<dyn IdentityRepository> = Arc::new(pg.identities());
     let idp_configs: Arc<dyn IdpConfigRepository> = Arc::new(pg.idp_configs());
     let audit: Arc<dyn AuditRepository> = Arc::new(pg.audit());
+    let operators: Arc<dyn OperatorRepository> = Arc::new(pg.operators());
+    let operator_credentials: Arc<dyn OperatorCredentialsRepository> =
+        Arc::new(pg.operator_credentials());
+    let operator_permissions: Arc<dyn OperatorPermissionRepository> =
+        Arc::new(pg.operator_permissions());
+    let operator_roles: Arc<dyn OperatorRoleRepository> = Arc::new(pg.operator_roles());
     let credentials = Arc::new(pg.user_credentials());
     let sessions = Arc::new(session_store);
 
     let password_svc = Arc::new(PasswordService::new(users.clone(), credentials));
     let session_svc = Arc::new(SessionService::new(sessions, refresh_tokens.clone()));
-    let authz_svc = Arc::new(AuthzService::new(roles.clone(), permissions.clone()));
+    let authz_svc = Arc::new(AuthzService::new(
+        claim_definitions.clone(),
+        group_claims.clone(),
+        user_claims.clone(),
+    ));
 
     let signing_key = Arc::new(
         generate_rsa_key(Uuid::nil(), 365).context("failed to generate signing key")?,
@@ -73,13 +85,18 @@ async fn main() -> anyhow::Result<()> {
         tenants: tenants.clone(),
         applications,
         refresh_tokens,
-        roles: roles.clone(),
-        permissions: permissions.clone(),
         groups: groups.clone(),
         passkeys,
         identities,
         idp_configs,
         audit,
+        operators,
+        operator_credentials,
+        operator_permissions,
+        operator_roles_repo: operator_roles,
+        claim_definitions,
+        group_claims,
+        user_claims,
         auth_codes: auth_code_store,
         password_svc,
         session_svc,

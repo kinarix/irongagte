@@ -2,80 +2,92 @@ use std::{collections::HashMap, sync::Arc};
 
 use irongate_authz::{
     engine::AuthzService,
-    policy::{AbacPolicy, Condition, EvaluationContext, Operator, PolicyEffect},
+    policy::{
+        evaluate, policy_allows, policy_denies, AbacPolicy, Condition, EvaluationContext, Operator,
+        PolicyEffect,
+    },
     scope::{resolve_scopes, scopes_grant},
-    policy::{evaluate, policy_allows, policy_denies},
 };
 use irongate_core::{
     errors::StoreError,
-    repositories::{PermissionRepository, RoleRepository},
-    types::{Permission, Role},
+    repositories::{
+        ClaimDefinitionRepository, GroupClaimRepository, ResolvedGroupClaim, ResolvedUserClaim,
+        UserClaimRepository,
+    },
+    types::{ClaimDefinition, ClaimType, GroupClaim, UserClaim},
 };
 use mockall::mock;
+use serde_json::json;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
 mock! {
-    RoleRepo {}
+    ClaimDefRepo {}
     #[async_trait::async_trait]
-    impl RoleRepository for RoleRepo {
-        async fn create(&self, role: Role) -> Result<Role, StoreError>;
-        async fn get_by_id(&self, id: Uuid, tenant_id: Uuid) -> Result<Role, StoreError>;
-        async fn get_by_name(&self, name: &str, tenant_id: Uuid) -> Result<Role, StoreError>;
-        async fn update(&self, role: Role) -> Result<Role, StoreError>;
-        async fn delete(&self, id: Uuid, tenant_id: Uuid) -> Result<(), StoreError>;
-        async fn list(&self, tenant_id: Uuid) -> Result<Vec<Role>, StoreError>;
-        async fn get_roles_for_user(&self, user_id: Uuid, tenant_id: Uuid) -> Result<Vec<Role>, StoreError>;
-        async fn assign_role_to_user(&self, user_id: Uuid, role_id: Uuid, tenant_id: Uuid) -> Result<(), StoreError>;
-        async fn remove_role_from_user(&self, user_id: Uuid, role_id: Uuid, tenant_id: Uuid) -> Result<(), StoreError>;
+    impl ClaimDefinitionRepository for ClaimDefRepo {
+        async fn create(&self, def: ClaimDefinition) -> Result<ClaimDefinition, StoreError>;
+        async fn get_by_id(&self, id: Uuid) -> Result<ClaimDefinition, StoreError>;
+        async fn get_by_app_and_key(&self, application_id: Uuid, key: &str) -> Result<ClaimDefinition, StoreError>;
+        async fn list_for_app(&self, application_id: Uuid) -> Result<Vec<ClaimDefinition>, StoreError>;
+        async fn list_for_tenant(&self, tenant_id: Uuid) -> Result<Vec<ClaimDefinition>, StoreError>;
+        async fn update(&self, def: ClaimDefinition) -> Result<ClaimDefinition, StoreError>;
+        async fn delete(&self, id: Uuid) -> Result<(), StoreError>;
     }
 }
 
 mock! {
-    PermRepo {}
+    GroupClaimRepo {}
     #[async_trait::async_trait]
-    impl PermissionRepository for PermRepo {
-        async fn create(&self, permission: Permission) -> Result<Permission, StoreError>;
-        async fn get_by_id(&self, id: Uuid, tenant_id: Uuid) -> Result<Permission, StoreError>;
-        async fn list(&self, tenant_id: Uuid) -> Result<Vec<Permission>, StoreError>;
-        async fn get_permissions_for_role(&self, role_id: Uuid, tenant_id: Uuid) -> Result<Vec<Permission>, StoreError>;
-        async fn assign_permission_to_role(&self, role_id: Uuid, permission_id: Uuid, tenant_id: Uuid) -> Result<(), StoreError>;
-        async fn delete(&self, id: Uuid, tenant_id: Uuid) -> Result<(), StoreError>;
+    impl GroupClaimRepository for GroupClaimRepo {
+        async fn assign(&self, group_id: Uuid, claim_def_id: Uuid, value: &str) -> Result<GroupClaim, StoreError>;
+        async fn revoke(&self, group_id: Uuid, claim_def_id: Uuid, value: &str) -> Result<(), StoreError>;
+        async fn list_for_group(&self, group_id: Uuid) -> Result<Vec<GroupClaim>, StoreError>;
+        async fn list_for_claim_def(&self, claim_def_id: Uuid) -> Result<Vec<GroupClaim>, StoreError>;
+        async fn list_for_user_in_app(&self, user_id: Uuid, application_id: Uuid) -> Result<Vec<ResolvedGroupClaim>, StoreError>;
+    }
+}
+
+mock! {
+    UserClaimRepo {}
+    #[async_trait::async_trait]
+    impl UserClaimRepository for UserClaimRepo {
+        async fn assign(&self, user_id: Uuid, claim_def_id: Uuid, value: &str) -> Result<UserClaim, StoreError>;
+        async fn revoke(&self, user_id: Uuid, claim_def_id: Uuid, value: &str) -> Result<(), StoreError>;
+        async fn list_for_user(&self, user_id: Uuid) -> Result<Vec<UserClaim>, StoreError>;
+        async fn list_for_user_in_app(&self, user_id: Uuid, application_id: Uuid) -> Result<Vec<ResolvedUserClaim>, StoreError>;
     }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn make_service(roles: MockRoleRepo, perms: MockPermRepo) -> AuthzService {
-    AuthzService::new(Arc::new(roles), Arc::new(perms))
-}
-
-fn make_role(name: &str, tenant_id: Uuid) -> Role {
-    Role {
+fn make_def(key: &str, claim_type: ClaimType) -> ClaimDefinition {
+    ClaimDefinition {
         id: Uuid::new_v4(),
-        tenant_id,
-        name: name.into(),
+        application_id: Uuid::new_v4(),
+        key: key.into(),
+        claim_type,
         description: None,
-        parent_role_id: None,
         created_at: OffsetDateTime::now_utc(),
         updated_at: OffsetDateTime::now_utc(),
     }
 }
 
-fn make_permission(resource: &str, action: &str, tenant_id: Uuid) -> Permission {
-    Permission {
-        id: Uuid::new_v4(),
-        tenant_id,
-        resource: resource.into(),
-        action: action.into(),
-        description: None,
-        created_at: OffsetDateTime::now_utc(),
-    }
+fn make_service(
+    defs: MockClaimDefRepo,
+    group_claims: MockGroupClaimRepo,
+    user_claims: MockUserClaimRepo,
+) -> AuthzService {
+    AuthzService::new(Arc::new(defs), Arc::new(group_claims), Arc::new(user_claims))
 }
 
-fn make_policy(resource: &str, action: &str, effect: PolicyEffect, conditions: Vec<Condition>) -> AbacPolicy {
+fn make_policy(
+    resource: &str,
+    action: &str,
+    effect: PolicyEffect,
+    conditions: Vec<Condition>,
+) -> AbacPolicy {
     AbacPolicy {
         id: Uuid::new_v4(),
         tenant_id: Uuid::new_v4(),
@@ -87,209 +99,197 @@ fn make_policy(resource: &str, action: &str, effect: PolicyEffect, conditions: V
     }
 }
 
-// ── AuthzService — RBAC ───────────────────────────────────────────────────────
+// ── Claim resolution ──────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn check_permission_returns_true_when_role_has_permission() {
-    let tenant_id = Uuid::new_v4();
-    let user_id = Uuid::new_v4();
-    let role = make_role("admin", tenant_id);
-    let perm = make_permission("users", "read", tenant_id);
+async fn resolve_claims_emits_nothing_when_no_defs() {
+    let mut defs = MockClaimDefRepo::new();
+    defs.expect_list_for_app().returning(|_| Ok(vec![]));
+    let group_claims = MockGroupClaimRepo::new();
+    let user_claims = MockUserClaimRepo::new();
+    let svc = make_service(defs, group_claims, user_claims);
 
-    let role_clone = role.clone();
-    let perm_clone = perm.clone();
-
-    let mut roles = MockRoleRepo::new();
-    roles
-        .expect_get_roles_for_user()
-        .once()
-        .returning(move |_, _| Ok(vec![role_clone.clone()]));
-    roles.expect_get_by_id().never();
-
-    let mut perms = MockPermRepo::new();
-    perms
-        .expect_get_permissions_for_role()
-        .once()
-        .returning(move |_, _| Ok(vec![perm_clone.clone()]));
-
-    let svc = make_service(roles, perms);
-    assert!(svc.check_permission(user_id, tenant_id, "users", "read").await.unwrap());
+    let out = svc
+        .resolve_claims_for_app(Uuid::new_v4(), Uuid::new_v4(), "billing")
+        .await
+        .unwrap();
+    assert!(out.is_empty());
 }
 
 #[tokio::test]
-async fn check_permission_returns_false_when_permission_does_not_match() {
-    let tenant_id = Uuid::new_v4();
+async fn resolve_claims_merges_multi_across_groups_and_user() {
+    let def = make_def("roles", ClaimType::Multi);
+    let def_id = def.id;
+    let app_id = def.application_id;
     let user_id = Uuid::new_v4();
-    let role = make_role("viewer", tenant_id);
-    let perm = make_permission("users", "read", tenant_id);
 
-    let role_clone = role.clone();
-    let perm_clone = perm.clone();
+    let mut defs = MockClaimDefRepo::new();
+    let def_clone = def.clone();
+    defs.expect_list_for_app()
+        .returning(move |_| Ok(vec![def_clone.clone()]));
 
-    let mut roles = MockRoleRepo::new();
-    roles
-        .expect_get_roles_for_user()
-        .once()
-        .returning(move |_, _| Ok(vec![role_clone.clone()]));
+    let mut group_claims = MockGroupClaimRepo::new();
+    group_claims.expect_list_for_user_in_app().returning(move |_, _| {
+        let now = OffsetDateTime::now_utc();
+        Ok(vec![
+            ResolvedGroupClaim {
+                claim_def_id: def_id,
+                claim_key: "roles".into(),
+                claim_type: ClaimType::Multi,
+                group_id: Uuid::new_v4(),
+                group_priority: 5,
+                group_created_at: now,
+                value: "admin".into(),
+            },
+            ResolvedGroupClaim {
+                claim_def_id: def_id,
+                claim_key: "roles".into(),
+                claim_type: ClaimType::Multi,
+                group_id: Uuid::new_v4(),
+                group_priority: 1,
+                group_created_at: now,
+                value: "viewer".into(),
+            },
+        ])
+    });
 
-    let mut perms = MockPermRepo::new();
-    perms
-        .expect_get_permissions_for_role()
-        .once()
-        .returning(move |_, _| Ok(vec![perm_clone.clone()]));
+    let mut user_claims = MockUserClaimRepo::new();
+    user_claims.expect_list_for_user_in_app().returning(move |_, _| {
+        Ok(vec![ResolvedUserClaim {
+            claim_def_id: def_id,
+            claim_key: "roles".into(),
+            claim_type: ClaimType::Multi,
+            value: "owner".into(),
+        }])
+    });
 
-    let svc = make_service(roles, perms);
-    assert!(!svc.check_permission(user_id, tenant_id, "users", "write").await.unwrap());
+    let svc = make_service(defs, group_claims, user_claims);
+    let out = svc
+        .resolve_claims_for_app(user_id, app_id, "billing")
+        .await
+        .unwrap();
+
+    let v = out.get("billing:roles").unwrap();
+    let mut got: Vec<String> = v
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_str().unwrap().to_string())
+        .collect();
+    got.sort();
+    assert_eq!(got, vec!["admin", "owner", "viewer"]);
 }
 
 #[tokio::test]
-async fn check_permission_returns_false_when_user_has_no_roles() {
-    let tenant_id = Uuid::new_v4();
-    let user_id = Uuid::new_v4();
+async fn resolve_claims_scalar_user_direct_overrides_groups() {
+    let def = make_def("plan", ClaimType::Scalar);
+    let def_id = def.id;
+    let mut defs = MockClaimDefRepo::new();
+    let def_clone = def.clone();
+    defs.expect_list_for_app()
+        .returning(move |_| Ok(vec![def_clone.clone()]));
 
-    let mut roles = MockRoleRepo::new();
-    roles
-        .expect_get_roles_for_user()
-        .once()
-        .returning(|_, _| Ok(vec![]));
+    let mut group_claims = MockGroupClaimRepo::new();
+    group_claims.expect_list_for_user_in_app().returning(move |_, _| {
+        Ok(vec![ResolvedGroupClaim {
+            claim_def_id: def_id,
+            claim_key: "plan".into(),
+            claim_type: ClaimType::Scalar,
+            group_id: Uuid::new_v4(),
+            group_priority: 10,
+            group_created_at: OffsetDateTime::now_utc(),
+            value: "free".into(),
+        }])
+    });
 
-    let mut perms = MockPermRepo::new();
-    perms.expect_get_permissions_for_role().never();
+    let mut user_claims = MockUserClaimRepo::new();
+    user_claims.expect_list_for_user_in_app().returning(move |_, _| {
+        Ok(vec![ResolvedUserClaim {
+            claim_def_id: def_id,
+            claim_key: "plan".into(),
+            claim_type: ClaimType::Scalar,
+            value: "enterprise".into(),
+        }])
+    });
 
-    let svc = make_service(roles, perms);
-    assert!(!svc.check_permission(user_id, tenant_id, "users", "read").await.unwrap());
+    let svc = make_service(defs, group_claims, user_claims);
+    let out = svc
+        .resolve_claims_for_app(Uuid::new_v4(), Uuid::new_v4(), "billing")
+        .await
+        .unwrap();
+    assert_eq!(out.get("billing:plan"), Some(&json!("enterprise")));
 }
 
 #[tokio::test]
-async fn check_permission_inherits_parent_role_permissions() {
-    let tenant_id = Uuid::new_v4();
-    let user_id = Uuid::new_v4();
+async fn resolve_claims_scalar_highest_priority_group_wins() {
+    let def = make_def("plan", ClaimType::Scalar);
+    let def_id = def.id;
+    let mut defs = MockClaimDefRepo::new();
+    let def_clone = def.clone();
+    defs.expect_list_for_app()
+        .returning(move |_| Ok(vec![def_clone.clone()]));
 
-    let parent_role = make_role("base", tenant_id);
-    let parent_id = parent_role.id;
+    // Repo returns rows already ordered by priority DESC, created_at ASC.
+    let mut group_claims = MockGroupClaimRepo::new();
+    group_claims.expect_list_for_user_in_app().returning(move |_, _| {
+        Ok(vec![
+            ResolvedGroupClaim {
+                claim_def_id: def_id,
+                claim_key: "plan".into(),
+                claim_type: ClaimType::Scalar,
+                group_id: Uuid::new_v4(),
+                group_priority: 100,
+                group_created_at: OffsetDateTime::now_utc(),
+                value: "enterprise".into(),
+            },
+            ResolvedGroupClaim {
+                claim_def_id: def_id,
+                claim_key: "plan".into(),
+                claim_type: ClaimType::Scalar,
+                group_id: Uuid::new_v4(),
+                group_priority: 5,
+                group_created_at: OffsetDateTime::now_utc(),
+                value: "free".into(),
+            },
+        ])
+    });
 
-    let mut child_role = make_role("editor", tenant_id);
-    child_role.parent_role_id = Some(parent_id);
-    let child_clone = child_role.clone();
+    let mut user_claims = MockUserClaimRepo::new();
+    user_claims
+        .expect_list_for_user_in_app()
+        .returning(move |_, _| Ok(vec![]));
 
-    let parent_perm = make_permission("articles", "publish", tenant_id);
-    let child_perm = make_permission("articles", "read", tenant_id);
-
-    let parent_role_clone = parent_role.clone();
-    let parent_perm_clone = parent_perm.clone();
-    let child_perm_clone = child_perm.clone();
-
-    let mut roles = MockRoleRepo::new();
-    roles
-        .expect_get_roles_for_user()
-        .once()
-        .returning(move |_, _| Ok(vec![child_clone.clone()]));
-    roles
-        .expect_get_by_id()
-        .withf(move |id, _| *id == parent_id)
-        .once()
-        .returning(move |_, _| Ok(parent_role_clone.clone()));
-
-    let mut perms = MockPermRepo::new();
-    perms
-        .expect_get_permissions_for_role()
-        .withf(move |id, _| *id == parent_id)
-        .once()
-        .returning(move |_, _| Ok(vec![parent_perm_clone.clone()]));
-    perms
-        .expect_get_permissions_for_role()
-        .once()
-        .returning(move |_, _| Ok(vec![child_perm_clone.clone()]));
-
-    let svc = make_service(roles, perms);
-
-    // Parent's permission is inherited through the child role
-    assert!(svc.check_permission(user_id, tenant_id, "articles", "publish").await.unwrap());
+    let svc = make_service(defs, group_claims, user_claims);
+    let out = svc
+        .resolve_claims_for_app(Uuid::new_v4(), Uuid::new_v4(), "billing")
+        .await
+        .unwrap();
+    assert_eq!(out.get("billing:plan"), Some(&json!("enterprise")));
 }
 
 #[tokio::test]
-async fn get_user_permissions_deduplicates_across_roles() {
-    let tenant_id = Uuid::new_v4();
-    let user_id = Uuid::new_v4();
+async fn resolve_claims_omits_unassigned_claims() {
+    let def = make_def("region", ClaimType::Scalar);
+    let mut defs = MockClaimDefRepo::new();
+    let def_clone = def.clone();
+    defs.expect_list_for_app()
+        .returning(move |_| Ok(vec![def_clone.clone()]));
 
-    let role_a = make_role("role-a", tenant_id);
-    let role_b = make_role("role-b", tenant_id);
-    let shared_perm = make_permission("reports", "read", tenant_id);
+    let mut group_claims = MockGroupClaimRepo::new();
+    group_claims
+        .expect_list_for_user_in_app()
+        .returning(move |_, _| Ok(vec![]));
+    let mut user_claims = MockUserClaimRepo::new();
+    user_claims
+        .expect_list_for_user_in_app()
+        .returning(move |_, _| Ok(vec![]));
 
-    let a_clone = role_a.clone();
-    let b_clone = role_b.clone();
-    let perm1 = shared_perm.clone();
-    let perm2 = shared_perm.clone();
-
-    let mut roles = MockRoleRepo::new();
-    roles
-        .expect_get_roles_for_user()
-        .once()
-        .returning(move |_, _| Ok(vec![a_clone.clone(), b_clone.clone()]));
-
-    let mut perms = MockPermRepo::new();
-    perms
-        .expect_get_permissions_for_role()
-        .returning(move |_, _| Ok(vec![perm1.clone()]));
-    let _ = perm2; // unused — same UUID so dedup kicks in
-
-    let svc = make_service(roles, perms);
-    let result = svc.get_user_permissions(user_id, tenant_id).await.unwrap();
-    assert_eq!(result.len(), 1, "duplicate permission should be deduplicated");
-}
-
-#[tokio::test]
-async fn assign_role_delegates_to_repository() {
-    let tenant_id = Uuid::new_v4();
-    let user_id = Uuid::new_v4();
-    let role_id = Uuid::new_v4();
-
-    let mut roles = MockRoleRepo::new();
-    roles
-        .expect_assign_role_to_user()
-        .once()
-        .returning(|_, _, _| Ok(()));
-
-    let perms = MockPermRepo::new();
-    let svc = make_service(roles, perms);
-    svc.assign_role(user_id, role_id, tenant_id).await.unwrap();
-}
-
-#[tokio::test]
-async fn remove_role_delegates_to_repository() {
-    let tenant_id = Uuid::new_v4();
-    let user_id = Uuid::new_v4();
-    let role_id = Uuid::new_v4();
-
-    let mut roles = MockRoleRepo::new();
-    roles
-        .expect_remove_role_from_user()
-        .once()
-        .returning(|_, _, _| Ok(()));
-
-    let perms = MockPermRepo::new();
-    let svc = make_service(roles, perms);
-    svc.remove_role(user_id, role_id, tenant_id).await.unwrap();
-}
-
-#[tokio::test]
-async fn check_permission_propagates_store_error() {
-    let tenant_id = Uuid::new_v4();
-    let user_id = Uuid::new_v4();
-
-    let mut roles = MockRoleRepo::new();
-    roles
-        .expect_get_roles_for_user()
-        .once()
-        .returning(|_, _| Err(StoreError::Database("connection lost".into())));
-
-    let perms = MockPermRepo::new();
-    let svc = make_service(roles, perms);
-    let result = svc.check_permission(user_id, tenant_id, "x", "y").await;
-    assert!(
-        matches!(result, Err(irongate_core::errors::AuthzError::Store(_))),
-        "expected Store error, got {result:?}"
-    );
+    let svc = make_service(defs, group_claims, user_claims);
+    let out = svc
+        .resolve_claims_for_app(Uuid::new_v4(), Uuid::new_v4(), "billing")
+        .await
+        .unwrap();
+    assert!(out.is_empty());
 }
 
 // ── Scope resolution ──────────────────────────────────────────────────────────
@@ -298,10 +298,13 @@ async fn check_permission_propagates_store_error() {
 fn resolve_scopes_parses_resource_action_pairs() {
     let scopes = vec!["users:read".into(), "reports:write".into()];
     let parsed = resolve_scopes(&scopes);
-    assert_eq!(parsed, vec![
-        ("users".into(), "read".into()),
-        ("reports".into(), "write".into()),
-    ]);
+    assert_eq!(
+        parsed,
+        vec![
+            ("users".into(), "read".into()),
+            ("reports".into(), "write".into()),
+        ]
+    );
 }
 
 #[test]
@@ -410,10 +413,12 @@ fn evaluate_policy_time_range_condition() {
         "reports",
         "export",
         PolicyEffect::Allow,
-        vec![Condition::TimeRange { start_hour: 9, end_hour: 17 }],
+        vec![Condition::TimeRange {
+            start_hour: 9,
+            end_hour: 17,
+        }],
     );
 
-    // 10:00 UTC — inside business hours
     let inside = PrimitiveDateTime::new(
         Date::from_calendar_date(2026, Month::January, 15).unwrap(),
         Time::from_hms(10, 0, 0).unwrap(),
@@ -426,7 +431,6 @@ fn evaluate_policy_time_range_condition() {
     };
     assert!(evaluate(&policy, &ctx_inside));
 
-    // 22:00 UTC — outside business hours
     let outside = PrimitiveDateTime::new(
         Date::from_calendar_date(2026, Month::January, 15).unwrap(),
         Time::from_hms(22, 0, 0).unwrap(),

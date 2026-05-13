@@ -5,13 +5,18 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use irongate_core::types::Tenant;
+use irongate_core::types::{
+    op_action::{CREATE, DELETE, LIST, READ, UPDATE},
+    op_resource::TENANTS,
+    Tenant,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
+    authz_op::{require_perm, Scope},
     error::Result,
     handlers::admin_auth::AdminClaims,
     state::AppState,
@@ -52,20 +57,22 @@ fn tenant_to_json(t: &Tenant) -> Value {
 }
 
 pub async fn list_tenants(
-    _claims: AdminClaims,
+    AdminClaims(claims): AdminClaims,
     State(state): State<Arc<AppState>>,
     Query(page): Query<Pagination>,
 ) -> Result<Json<Value>> {
+    require_perm(&state, &claims, Scope::Global, TENANTS, LIST).await?;
     let items = state.tenants.list(page.limit, page.offset).await?;
     let data: Vec<Value> = items.iter().map(tenant_to_json).collect();
     Ok(Json(json!({ "tenants": data, "total": data.len() })))
 }
 
 pub async fn create_tenant(
-    _claims: AdminClaims,
+    AdminClaims(claims): AdminClaims,
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateTenantRequest>,
 ) -> Result<(StatusCode, Json<Value>)> {
+    require_perm(&state, &claims, Scope::Global, TENANTS, CREATE).await?;
     let now = OffsetDateTime::now_utc();
     let tenant = Tenant {
         id: Uuid::new_v4(),
@@ -81,20 +88,24 @@ pub async fn create_tenant(
 }
 
 pub async fn get_tenant(
-    _claims: AdminClaims,
+    AdminClaims(claims): AdminClaims,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
+    // A tenant-scoped operator with `tenants:read` for tenant `id` is allowed to
+    // see its own tenant record; otherwise a global perm is required.
+    require_perm(&state, &claims, Scope::Tenant(id), TENANTS, READ).await?;
     let tenant = state.tenants.get_by_id(id).await?;
     Ok(Json(tenant_to_json(&tenant)))
 }
 
 pub async fn update_tenant(
-    _claims: AdminClaims,
+    AdminClaims(claims): AdminClaims,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateTenantRequest>,
 ) -> Result<Json<Value>> {
+    require_perm(&state, &claims, Scope::Tenant(id), TENANTS, UPDATE).await?;
     let mut tenant = state.tenants.get_by_id(id).await?;
     if let Some(name) = req.name {
         tenant.name = name;
@@ -108,10 +119,12 @@ pub async fn update_tenant(
 }
 
 pub async fn delete_tenant(
-    _claims: AdminClaims,
+    AdminClaims(claims): AdminClaims,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode> {
+    // Deleting a tenant is platform-level — require a global permission.
+    require_perm(&state, &claims, Scope::Global, TENANTS, DELETE).await?;
     state.tenants.soft_delete(id).await?;
     Ok(StatusCode::NO_CONTENT)
 }

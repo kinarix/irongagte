@@ -4,11 +4,16 @@ use axum::{
     extract::{Query, State},
     Json,
 };
+use irongate_core::types::{
+    op_action::LIST,
+    op_resource::AUDIT_EVENTS,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::{
+    authz_op::{require_perm, Scope},
     error::Result,
     handlers::admin_auth::AdminClaims,
     state::AppState,
@@ -40,10 +45,11 @@ fn audit_to_json(e: &irongate_core::types::AuditEvent) -> Value {
 }
 
 pub async fn list_audit_events(
-    _claims: AdminClaims,
+    AdminClaims(claims): AdminClaims,
     State(state): State<Arc<AppState>>,
     Query(q): Query<AuditQuery>,
 ) -> Result<Json<Value>> {
+    require_perm(&state, &claims, Scope::Tenant(q.tenant_id), AUDIT_EVENTS, LIST).await?;
     let items = state.audit.list(q.tenant_id, q.limit, q.offset).await?;
     let data: Vec<Value> = items.iter().map(audit_to_json).collect();
     Ok(Json(json!({ "events": data, "total": data.len() })))

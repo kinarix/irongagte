@@ -5,8 +5,9 @@ use axum::{
     http::HeaderMap,
     Form, Json,
 };
-use irongate_core::User;
+use irongate_core::types::{Application, User};
 use irongate_crypto::{jwt::sign, token::hash_token};
+use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use base64ct::{Base64UrlUnpadded, Encoding};
@@ -88,8 +89,7 @@ async fn password_grant(
         )
         .await?;
 
-    let access_token =
-        mint_access_token(&state, user.id, tenant_id, &app.client_id, &scope, app.access_token_ttl)?;
+    let access_token = mint_access_token(&state, &user, &app, &scope).await?;
 
     let mut response = json!({
         "access_token": access_token,
@@ -146,14 +146,13 @@ async fn refresh_token_grant(
         .rotate_refresh_token(&raw_token, tenant_id, app.refresh_token_ttl)
         .await?;
 
-    let access_token = mint_access_token(
-        &state,
-        session.user_id,
-        tenant_id,
-        &app.client_id,
-        &scope,
-        app.access_token_ttl,
-    )?;
+    let user = state
+        .users
+        .get_by_id(session.user_id, tenant_id)
+        .await
+        .map_err(|_| Error::Unauthorized("user not found".into()))?;
+
+    let access_token = mint_access_token(&state, &user, &app, &scope).await?;
 
     Ok(Json(json!({
         "access_token": access_token,
@@ -227,14 +226,7 @@ async fn auth_code_grant(
         )
         .await?;
 
-    let access_token = mint_access_token(
-        &state,
-        user.id,
-        tenant_id,
-        &app.client_id,
-        &data.scope,
-        app.access_token_ttl,
-    )?;
+    let access_token = mint_access_token(&state, &user, &app, &data.scope).await?;
 
     let mut response = json!({
         "access_token": access_token,
@@ -258,27 +250,43 @@ async fn auth_code_grant(
     Ok(Json(response))
 }
 
-fn mint_access_token(
+async fn mint_access_token(
     state: &AppState,
-    user_id: Uuid,
-    tenant_id: Uuid,
-    aud: &str,
+    user: &User,
+    app: &Application,
     scope: &str,
-    ttl_secs: i64,
 ) -> Result<String> {
     let now = now_secs();
+    let extras = resolve_claims(state, user, app).await?;
     let claims = AccessTokenClaims {
-        sub: user_id.to_string(),
+        sub: user.id.to_string(),
         iss: state.config.base_url.clone(),
-        aud: aud.to_string(),
-        exp: now + ttl_secs as u64,
+        aud: app.client_id.clone(),
+        exp: now + app.access_token_ttl as u64,
         iat: now,
         jti: make_jti(),
         scope: scope.to_string(),
-        tenant_id: tenant_id.to_string(),
+        tenant_id: user.tenant_id.to_string(),
+        extras,
     };
     let alg = algo_for_key(&state.signing_key.algorithm);
     sign(&claims, &state.signing_key.private_key_pem, alg, Some(&state.signing_key.id.to_string()))
+        .map_err(|e| Error::Internal(e.to_string()))
+}
+
+/// Resolve every custom claim for `user` against `app`. Returns a flat map
+/// keyed by `<app.claim_prefix>:<claim.key>` for flattening into the JWT.
+/// OIDC standard claims (`sub`, `email`, `name`, …) are emitted by the caller
+/// directly from the `User` record and are not produced here.
+async fn resolve_claims(
+    state: &AppState,
+    user: &User,
+    app: &Application,
+) -> Result<HashMap<String, Value>> {
+    state
+        .authz_svc
+        .resolve_claims_for_app(user.id, app.id, &app.claim_prefix)
+        .await
         .map_err(|e| Error::Internal(e.to_string()))
 }
 

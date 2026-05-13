@@ -8,13 +8,16 @@ use irongate_crypto::jwt::verify;
 use jsonwebtoken::Validation;
 
 use crate::{
-    claims::AccessTokenClaims,
+    claims::{OperatorClaims, OPERATOR_ACTOR_TYPE, OPERATOR_AUDIENCE},
     error::Error,
     handlers::oidc::algo_for_key,
     state::AppState,
 };
 
-pub struct AdminClaims(pub AccessTokenClaims);
+/// Extractor that requires a valid Operator JWT. End-user access tokens are
+/// rejected — Operators and end-users are strictly separate authentication
+/// domains in irongate.
+pub struct AdminClaims(pub OperatorClaims);
 
 impl FromRequestParts<Arc<AppState>> for AdminClaims {
     type Rejection = Error;
@@ -32,9 +35,9 @@ impl FromRequestParts<Arc<AppState>> for AdminClaims {
 
         let algo = algo_for_key(&state.signing_key.algorithm);
         let mut validation = Validation::new(algo);
-        validation.validate_aud = false;
+        validation.set_audience(&[OPERATOR_AUDIENCE]);
 
-        let claims = verify::<AccessTokenClaims>(
+        let claims = verify::<OperatorClaims>(
             token,
             &state.signing_key.public_key_pem,
             algo,
@@ -43,7 +46,7 @@ impl FromRequestParts<Arc<AppState>> for AdminClaims {
         .map_err(|_| Error::Unauthorized("invalid or expired token".into()))?
         .claims;
 
-        if !claims.scope.split_whitespace().any(|s| s == "admin:*") {
+        if claims.actor_type != OPERATOR_ACTOR_TYPE {
             return Err(Error::Forbidden);
         }
 

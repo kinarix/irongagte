@@ -1,29 +1,37 @@
 pub mod application;
 pub mod audit;
+pub mod claim_def;
 pub mod group;
+pub mod group_claim;
 pub mod identity;
 pub mod idp_config;
 pub mod magic_link;
+pub mod operator;
+pub mod operator_permission;
+pub mod operator_role;
 pub mod passkey;
-pub mod permission;
 pub mod refresh_token;
-pub mod role;
 pub mod tenant;
 pub mod user;
+pub mod user_claim;
 pub mod user_credentials;
 
 pub use application::PgApplicationRepo;
 pub use audit::PgAuditRepo;
+pub use claim_def::PgClaimDefinitionRepo;
 pub use group::PgGroupRepo;
+pub use group_claim::PgGroupClaimRepo;
 pub use identity::PgIdentityRepo;
 pub use idp_config::PgIdpConfigRepo;
 pub use magic_link::PgMagicLinkRepo;
+pub use operator::{PgOperatorCredentialsRepo, PgOperatorRepo};
+pub use operator_permission::PgOperatorPermissionRepo;
+pub use operator_role::PgOperatorRoleRepo;
 pub use passkey::PgPasskeyRepo;
-pub use permission::PgPermissionRepo;
 pub use refresh_token::PgRefreshTokenRepo;
-pub use role::PgRoleRepo;
 pub use tenant::PgTenantRepo;
 pub use user::PgUserRepo;
+pub use user_claim::PgUserClaimRepo;
 pub use user_credentials::PgUserCredentialsRepo;
 
 use irongate_core::errors::StoreError;
@@ -64,11 +72,11 @@ impl PgStore {
     pub fn refresh_tokens(&self) -> PgRefreshTokenRepo {
         PgRefreshTokenRepo { pool: self.pool.clone() }
     }
-    pub fn roles(&self) -> PgRoleRepo {
-        PgRoleRepo { pool: self.pool.clone() }
+    pub fn operator_permissions(&self) -> PgOperatorPermissionRepo {
+        PgOperatorPermissionRepo { pool: self.pool.clone() }
     }
-    pub fn permissions(&self) -> PgPermissionRepo {
-        PgPermissionRepo { pool: self.pool.clone() }
+    pub fn operator_roles(&self) -> PgOperatorRoleRepo {
+        PgOperatorRoleRepo { pool: self.pool.clone() }
     }
     pub fn idp_configs(&self) -> PgIdpConfigRepo {
         PgIdpConfigRepo { pool: self.pool.clone() }
@@ -87,5 +95,20 @@ impl PgStore {
     }
     pub fn groups(&self) -> PgGroupRepo {
         PgGroupRepo { pool: self.pool.clone() }
+    }
+    pub fn operators(&self) -> PgOperatorRepo {
+        PgOperatorRepo { pool: self.pool.clone() }
+    }
+    pub fn operator_credentials(&self) -> PgOperatorCredentialsRepo {
+        PgOperatorCredentialsRepo { pool: self.pool.clone() }
+    }
+    pub fn claim_definitions(&self) -> PgClaimDefinitionRepo {
+        PgClaimDefinitionRepo { pool: self.pool.clone() }
+    }
+    pub fn group_claims(&self) -> PgGroupClaimRepo {
+        PgGroupClaimRepo { pool: self.pool.clone() }
+    }
+    pub fn user_claims(&self) -> PgUserClaimRepo {
+        PgUserClaimRepo { pool: self.pool.clone() }
     }
 }

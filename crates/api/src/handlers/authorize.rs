@@ -149,6 +149,7 @@ async fn resolve_tenant(state: &AppState, explicit: Option<Uuid>) -> Result<Uuid
         .map_err(|_| Error::BadRequest("cannot resolve tenant".into()))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn login_form_html(
     client_id: &str,
     redirect_uri: &str,
