@@ -1,1 +1,3 @@
-// WebAuthn crate — passkey registration and authentication
+pub mod service;
+
+pub use service::WebAuthnService;
