@@ -1,6 +1,7 @@
 # Irongate — Claude Code Context
 
 > **GitHub:** https://github.com/kinarix/irongate
+> **Docs:** [`docs/`](docs/) — start here for architecture, claims model, admin API, etc.
 
 ## Knowledge Graph
 
@@ -8,7 +9,7 @@ An interactive knowledge graph of this codebase is available at:
 
 ```
 graphify-out/graph.html        — interactive HTML visualization (open in browser)
-graphify-out/graph_export.json — GraphRAG-ready JSON (286 nodes, 393 edges, 32 communities)
+graphify-out/graph_export.json — GraphRAG-ready JSON
 graphify-out/GRAPH_REPORT.md   — plain-language architecture report
 ```
 
@@ -18,8 +19,8 @@ Run `/graphify` to rebuild after significant code changes.
 
 **Irongate** is a full-featured, self-hostable Identity and Access Management (IAM) system
 built in Rust. It implements OAuth 2.0 + OIDC (as both server and client), local
-authentication, federated identity (Google, GitHub, LDAP), RBAC/ABAC authorization,
-SCIM 2.0, and multi-tenancy. Open source, enterprise-ready.
+authentication, federated identity (Google, GitHub, LDAP), claim-based authorization,
+SCIM 2.0, and multi-tenancy.
 
 **Phase 1 scope — SAML is explicitly deferred to Phase 2.**
 
@@ -32,22 +33,25 @@ independently testable. Dependencies flow in one direction only: outer crates de
 crates, never the reverse.
 
 ```
-identity-system/
+irongate/
 ├── CLAUDE.md
+├── README.md
 ├── Cargo.toml                  # workspace root — name = "irongate"
-├── migrations/                 # sqlx migrations (postgres + sqlite)
+├── docs/                       # full documentation
+├── migrations/postgres/        # sqlx migrations (Postgres only)
+├── admin-ui/                   # Vite + React + TS admin SPA
 ├── config/
 │   └── default.yaml
 └── crates/
     ├── core/                   # Domain types, traits, errors — no external deps
     ├── crypto/                 # JWT, JWKS, key rotation, hashing — depends on core
-    ├── store/                  # DB + Redis layer — depends on core, crypto
+    ├── store/                  # PostgreSQL + Redis — depends on core, crypto
     ├── auth/                   # Local auth flows — depends on core, crypto, store
     ├── federation/             # OIDC RP, OAuth2 clients, LDAP — depends on core, store
-    ├── authz/                  # RBAC/ABAC engine — depends on core, store
+    ├── authz/                  # Claim resolution engine — depends on core, store
     ├── scim/                   # SCIM 2.0 API — depends on core, store
     ├── webauthn/               # Passkey flows — depends on core, store
-    └── api/                    # Axum routers + handlers — depends on all crates above
+    └── api/                    # Axum routers + handlers + binary — depends on all above
 ```
 
 ### Dependency Rule
@@ -69,10 +73,17 @@ core → (nothing internal)
 ## Crate Responsibilities
 
 ### `core`
-- All domain types: `User`, `Tenant`, `Application`, `Session`, `Role`, `Permission`, `Identity`
+- Domain types: `User`, `Tenant`, `Application`, `Session`, `Group`, `ClaimDefinition`,
+  `ClaimType`, `GroupClaim`, `UserClaim`, `Identity`, `IdpConfig`, `RefreshToken`,
+  `AuditEvent`, `Operator`, `OperatorRole`, `OperatorPermission`
 - All error types (use `thiserror`)
-- Core traits: `IdentityProvider`, `TokenStore`, `UserStore`
+- Core traits: `IdentityProvider`, `UserRepository`, `GroupRepository`,
+  `ClaimDefinitionRepository`, `GroupClaimRepository`, `UserClaimRepository`,
+  `ApplicationRepository`, `SessionRepository`, …
+- Validation helpers: `validate_claim_prefix`, `validate_claim_key`
 - No database, no HTTP, no crypto — pure domain logic
+- **No `Role` entity for end users.** End-user authz is the claim model below.
+  Admin/operator authz uses a separate `OperatorRole` + `OperatorPermission` system.
 
 ### `crypto`
 - JWT sign and verify (RS256, ES256)
@@ -84,11 +95,14 @@ core → (nothing internal)
 - Base64url encoding (constant-time)
 
 ### `store`
-- All sqlx queries — compile-time verified
-- Dual database support: PostgreSQL (distributed) and SQLite (standalone)
-- Redis layer for sessions and refresh tokens
-- Repository pattern: one struct per aggregate (`UserRepo`, `SessionRepo`, etc.)
-- Migration files live in `/migrations`, run via `sqlx migrate run`
+- All sqlx queries — **runtime** `sqlx::query()` and `sqlx::query_as()`, not the
+  compile-time `query!` macros. Schema changes don't break `cargo check`; correctness
+  is verified by integration tests.
+- PostgreSQL only — SQLite was removed.
+- Redis layer for sessions and refresh-token revocation lookups
+- Repository pattern: one struct per aggregate (`UserRepo`, `SessionRepo`,
+  `ClaimDefinitionRepo`, `GroupClaimRepo`, `UserClaimRepo`, etc.)
+- Migration files live in `migrations/postgres/`, run via `sqlx migrate run`
 
 ### `auth`
 - Local credential flows: password login, magic link, TOTP
@@ -98,17 +112,20 @@ core → (nothing internal)
 
 ### `federation`
 - `IdentityProvider` trait implementations:
-  - `OidcProvider` — Google, GitHub, any OIDC-compliant IdP
-  - `OAuth2Provider` — providers without OIDC (plain OAuth2)
+  - `OidcProvider` — Google, generic OIDC
+  - `OAuth2Provider` — GitHub and any OAuth2-without-OIDC
   - `LdapProvider` — Active Directory and OpenLDAP
 - Handles: authorization URL generation, callback exchange, JIT provisioning
-- Account linking: match federated identity to existing user by `sub` or email
+- Account linking: match federated identity to existing user by `(provider, sub)` or email
 
 ### `authz`
-- RBAC engine: user → roles → permissions
-- ABAC policy evaluation (simple policy DSL, not full OPA)
-- Scope resolution: OAuth scopes → permissions
-- Permission embedding into access tokens
+- **Claim resolution engine.** `resolve_claims_for_app(user_id, application_id, claim_prefix)`
+  returns the `HashMap<String, Value>` to embed in a JWT.
+- For each `ClaimDefinition` of the application:
+  - `multi` → union and dedupe values from all group + user sources, emit as JSON array
+  - `scalar` → user-direct wins; else highest `group.priority`; else earliest `created_at`
+- Standard OIDC claims (`sub`, `email`, …) are added by `handlers/token.rs` from the
+  `User` record at canonical unprefixed keys.
 
 ### `scim`
 - SCIM 2.0 REST API (Users and Groups endpoints)
@@ -127,14 +144,37 @@ core → (nothing internal)
 - OIDC endpoints: `/oauth2/authorize`, `/oauth2/token`, `/oauth2/introspect`,
   `/oauth2/revoke`, `/oauth2/userinfo`, `/.well-known/openid-configuration`,
   `/.well-known/jwks.json`
-- Management REST API: `/api/v1/users`, `/api/v1/applications`, etc.
-- Admin API, SCIM API, health/readiness endpoints
+- Management REST API at `/admin/v1/*`: `tenants`, `users`, `applications`, `groups`,
+  `claims/{definitions,group-assignments,user-assignments,effective}`, `idp/configs`,
+  `sessions`, `audit`, `operators`, `operator-roles`, `operator-permissions`
+- SCIM API, health/readiness endpoints
+- Binary entry point (`cargo run -p irongate-api -- serve`)
 
 ---
 
 ## Key Design Decisions
 
-### IdentityProvider Trait (most important abstraction)
+### Claim model (no `Role` entity)
+
+See [`docs/claims-model.md`](docs/claims-model.md) for the full design. Summary:
+
+- **No `Role` table** — dropped in migration `0028_drop_roles.sql`.
+- Each `Application` has a unique-per-tenant `claim_prefix: String` (validated against
+  the OIDC reserved-name list).
+- Claims are defined per application: `ClaimDefinition { application_id, key,
+  claim_type: scalar|multi, description }`.
+- Values are assigned to **groups** (`GroupClaim`) or directly to **users** (`UserClaim`).
+- JWT key is `<prefix>:<key>`, e.g. `billing:roles`.
+- Conflict resolution:
+  - `multi` → BTreeSet merge across all sources → JSON array
+  - `scalar` → user-direct > group with highest `priority` > earliest `created_at`
+- OIDC standard claims (`sub`, `email`, `name`, `picture`, …) come from `User` and are
+  emitted unprefixed at canonical OIDC keys.
+
+When asked to "add a role", define a `multi` claim called `roles` on the relevant
+application and assign values via groups. Do not reintroduce the `Role` entity.
+
+### IdentityProvider Trait
 
 Every IdP — local, Google, GitHub, LDAP, and eventually SAML — implements this:
 
@@ -177,27 +217,45 @@ The rest of the system only talks to this trait. SAML in Phase 2 is just another
 
 ### Database
 
-- All queries use `sqlx` with compile-time verification (`query!` / `query_as!` macros)
-- Migrations in `/migrations` numbered sequentially: `0001_create_tenants.sql`, etc.
-- Every table has `tenant_id` for multi-tenancy — always filter by it
-- Use UUIDs for all primary keys (stored as `uuid` in postgres, `text` in sqlite)
-- Soft-delete pattern: `deleted_at TIMESTAMP` instead of `DROP`
+- All queries use `sqlx` at runtime — `sqlx::query()` / `sqlx::query_as()`. **Do not**
+  introduce compile-time `query!` / `query_as!` macros; they would require `DATABASE_URL`
+  to be set at compile time and would break offline builds.
+- PostgreSQL only. SQLite support was removed pre-Phase-1-complete.
+- Migrations in `migrations/postgres/` numbered sequentially: `0001_create_tenants.sql`, etc.
+- Every domain table has `tenant_id` for multi-tenancy — always filter by it.
+- Use UUIDs (`uuid` type, `gen_random_uuid()`) for all primary keys.
+- Soft-delete pattern: `deleted_at TIMESTAMPTZ` instead of `DROP`. Unique indexes that
+  should exclude deleted rows are partial: `WHERE deleted_at IS NULL`.
 
 ### Tokens
 
 - **Access Token**: JWT (RS256), short-lived (1 hour), contains `sub`, `aud`, `scope`,
-  `roles`, `permissions`, `jti`
-- **ID Token**: JWT (RS256), contains identity claims, addressed to the client (`aud`)
+  `tenant_id`, `jti`, plus custom claims resolved per the claim model.
+- **ID Token**: JWT (RS256), contains identity claims, addressed to the client (`aud`).
 - **Refresh Token**: opaque random string, SHA-256 hashed before DB storage,
-  rotated on every use
-- **Session**: stored in Redis, referenced by secure httpOnly cookie
+  rotated on every use.
+- **Session**: stored in Redis, referenced by secure httpOnly cookie.
 
 ### Multi-tenancy
 
-- All domain objects are scoped to a `tenant_id`
-- Tenant is resolved early in the request lifecycle from the hostname or a path prefix
-- Signing keys are per-tenant
-- IdP configurations are per-tenant
+- All domain objects are scoped to a `tenant_id`.
+- Tenant is resolved early in the request lifecycle:
+  - Admin API — from path/query parameter, gated by operator permissions
+  - OAuth/OIDC — derived from `client_id` → `application.tenant_id`
+  - SCIM — from bearer token scope
+- Signing keys are per-tenant.
+- IdP configurations are per-tenant.
+- Application `claim_prefix` is unique per tenant.
+
+### Operator RBAC (admin-side, separate from end-user claims)
+
+- `Operator` (admin account) is a separate auth tree from `User` (end users).
+- `OperatorPermission { scope, action }` catalog seeded on bootstrap.
+- `OperatorRole` bundles permissions; can be global (`tenant_id IS NULL`) or
+  tenant-scoped.
+- `OperatorRoleAssignment` grants a role to an operator.
+- Admin handlers call `operator_authz.require(operator, scope, action, tenant_id?)`.
+- See [`docs/operator-rbac.md`](docs/operator-rbac.md).
 
 ---
 
@@ -212,7 +270,7 @@ tower-http       = "0.5"
 tokio            = { version = "1", features = ["full"] }
 
 # Database
-sqlx             = { version = "0.7", features = ["postgres", "sqlite", "uuid", "time", "runtime-tokio"] }
+sqlx             = { version = "0.7", features = ["postgres", "uuid", "time", "runtime-tokio"] }
 
 # Cache
 fred             = "8"
@@ -263,33 +321,19 @@ metrics-exporter-prometheus = "0.13"
 
 ---
 
-## Build Order (follow this sequence)
-
-Build and fully test each crate before starting the next.
-
-```
-1. core        → domain types, traits, error types
-2. crypto      → JWT, hashing, key management
-3. store       → DB schema, migrations, repositories
-4. auth        → password, magic link, TOTP, sessions
-5. webauthn    → passkey registration + assertion
-6. federation  → OIDC RP, OAuth2, LDAP providers
-7. authz       → RBAC engine, permission resolution
-8. scim        → SCIM 2.0 endpoints
-9. api         → wire everything together, full integration tests
-```
-
----
-
 ## Testing Strategy
 
 - **Unit tests**: in-module, `#[cfg(test)]`, mock traits with `mockall`
-- **Integration tests**: in `tests/` per crate, use `sqlx::test` for DB tests
-  (spins up a real DB, runs migrations, rolls back after)
-- **API tests**: `axum::test` + `tower::ServiceExt` — no real HTTP server needed
-- **Crypto tests**: test vectors from RFC specs where available
+- **Integration tests**: in `tests/` per crate. Repository tests use `sqlx::test` which
+  spins up a real DB, runs migrations, and rolls back after.
+- **API tests**: `axum::test` + `tower::ServiceExt` — no real HTTP server needed.
+- **authz** tests use mocked repositories to verify the claim resolution algorithm in
+  isolation, with hand-built fixture data covering scalar/multi, priority ties, and
+  user override.
 - Always test the unhappy path: expired tokens, wrong audience, revoked sessions,
-  locked accounts, duplicate emails
+  locked accounts, duplicate emails, conflicting claim values.
+
+Current state: **175 tests passing** across the workspace (see `cargo test --workspace`).
 
 ```toml
 [dev-dependencies]
@@ -305,10 +349,13 @@ fake        = "2"        # generate fake user data in tests
 - `rustfmt` — always (`cargo fmt` before commit)
 - `clippy` — treat warnings as errors in CI (`cargo clippy -- -D warnings`)
 - No `unwrap()` in library code
-- Prefer `impl Trait` for function arguments, `Box<dyn Trait>` for stored heterogeneous values
+- Prefer `impl Trait` for function arguments, `Box<dyn Trait>` or `Arc<dyn Trait>` for
+  stored heterogeneous values
 - Keep handlers thin — handlers extract params and delegate to service functions
 - Service functions contain business logic — no Axum types, no sqlx types
 - Repository functions contain only DB queries — no business logic
+- Don't add features, fallbacks, or abstractions speculatively. The system has 28
+  migrations, 9 crates, and 175 tests — every addition should match that bar.
 
 ---
 
@@ -316,7 +363,7 @@ fake        = "2"        # generate fake user data in tests
 
 ```bash
 # Required
-DATABASE_URL=postgres://user:pass@localhost:5432/identity
+DATABASE_URL=postgres://user:pass@localhost:5432/irongate
 REDIS_URL=redis://localhost:6379
 BASE_URL=https://auth.yourcompany.com
 
@@ -333,18 +380,21 @@ LOG_FORMAT=json         # json (prod) | pretty (dev)
 
 ## What's In Phase 1 / What's Not
 
-### In Scope
+### In Scope (all complete)
 - Local auth: password, magic link, TOTP, passkeys (WebAuthn)
-- Federated: Google (OIDC), GitHub (OAuth2), LDAP / Active Directory
-- OAuth 2.0 server: Authorization Code + PKCE, Client Credentials, Device Flow, Refresh
+- Federated: Google (OIDC), GitHub (OAuth2), LDAP / Active Directory, generic OIDC
+- OAuth 2.0 server: Authorization Code + PKCE, Client Credentials, Device Flow, Refresh,
+  Password (gated)
 - OIDC: ID Token, UserInfo, Discovery document, JWKS
 - JWT: RS256 and ES256, key rotation
-- RBAC + basic ABAC
+- Claim-based authorization (prefix per app, group + user assignments)
+- Operator RBAC (admin-side permissions, separate from end-user claims)
 - SCIM 2.0 (Users + Groups)
 - Session management, refresh token rotation
 - Audit logging
 - Multi-tenancy
-- Self-host modes: standalone (SQLite) and distributed (PostgreSQL + Redis)
+- Admin UI (`admin-ui/`)
+- PostgreSQL + Redis deployment, Dockerfile + docker-compose
 
 ### Explicitly Out of Scope (Phase 2+)
 - SAML 2.0 — deferred, ecosystem not mature enough
@@ -352,7 +402,7 @@ LOG_FORMAT=json         # json (prod) | pretty (dev)
 - Webhooks for user lifecycle events
 - Organization hierarchy / sub-tenants
 - Verifiable Credentials (W3C)
-- Admin dashboard UI (spec exists, UI is a separate project)
+- SQLite standalone mode (removed pre-completion in favor of single deployment target)
 
 ---
 
@@ -363,9 +413,8 @@ The compiled binary is `irongate`. All CLI examples use this name:
 ```bash
 irongate serve
 irongate token inspect <jwt>
-irongate idp add google
+irongate admin init                  # bootstrap first operator
 irongate tenant create acme-corp
-irongate user suspend alice@company.com
 irongate migrate run
 ```
 
@@ -379,16 +428,19 @@ github.com/kinarix/irongate
 
 ---
 
-## Starting Point
+## Working in this repo
 
-When starting work, begin with `crates/core`:
+When starting work:
 
-1. Create the workspace `Cargo.toml`
-2. Scaffold all crate directories with stub `Cargo.toml` and `src/lib.rs`
-3. Implement `core` fully first:
-   - All domain structs (`User`, `Tenant`, `Application`, `Session`, `Role`, `Permission`, `Identity`, `IdpConfig`)
-   - All error enums per crate
-   - The `IdentityProvider` trait
-   - The repository traits (`UserRepository`, `SessionRepository`, etc.)
-4. Then move to `crypto`
-5. Commit after each crate is complete and tests pass
+1. **Read [`docs/`](docs/) first.** The claims model and operator RBAC distinction are
+   the two concepts most easily misread from the code alone.
+2. Use `make db-reset` to apply all migrations on a fresh DB before running tests
+   that need one.
+3. Run `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings`
+   before declaring a change done.
+4. For UI changes: `cd admin-ui && npm run typecheck && npm run lint && npm run build`.
+5. Don't reintroduce concepts that were explicitly removed:
+   - `Role` / `Permission` for end users (use the claim model)
+   - SQLite (Postgres only)
+   - Compile-time `sqlx::query!` macros (use runtime `sqlx::query()`)
+   - `claims_config` JSON on Application (replaced by `claim_prefix` + `ClaimDefinition`)
