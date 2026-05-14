@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod authz_op;
 pub mod claims;
 pub mod config;

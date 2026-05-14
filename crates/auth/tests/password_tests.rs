@@ -88,7 +88,9 @@ async fn authenticate_success() {
         .returning(move |_, _| Ok(creds_clone.clone()));
 
     let svc = PasswordService::new(Arc::new(mock_users), Arc::new(mock_creds));
-    let result = svc.authenticate("alice@example.com", "hunter2", tenant_id).await;
+    let result = svc
+        .authenticate("alice@example.com", "hunter2", tenant_id)
+        .await;
     assert!(result.is_ok());
     assert_eq!(result.unwrap().id, user.id);
 }
@@ -114,7 +116,9 @@ async fn authenticate_wrong_password() {
         .returning(move |_, _| Ok(creds_clone.clone()));
 
     let svc = PasswordService::new(Arc::new(mock_users), Arc::new(mock_creds));
-    let result = svc.authenticate("alice@example.com", "wrong", tenant_id).await;
+    let result = svc
+        .authenticate("alice@example.com", "wrong", tenant_id)
+        .await;
     assert!(matches!(result, Err(AuthError::InvalidCredentials)));
 }
 
@@ -131,7 +135,9 @@ async fn authenticate_unknown_user() {
     let mock_creds = MockUserCredsRepo::new();
 
     let svc = PasswordService::new(Arc::new(mock_users), Arc::new(mock_creds));
-    let result = svc.authenticate("nobody@example.com", "pass", tenant_id).await;
+    let result = svc
+        .authenticate("nobody@example.com", "pass", tenant_id)
+        .await;
     assert!(matches!(result, Err(AuthError::InvalidCredentials)));
 }
 
@@ -150,7 +156,9 @@ async fn authenticate_suspended_user() {
     let mock_creds = MockUserCredsRepo::new();
 
     let svc = PasswordService::new(Arc::new(mock_users), Arc::new(mock_creds));
-    let result = svc.authenticate("alice@example.com", "pass", tenant_id).await;
+    let result = svc
+        .authenticate("alice@example.com", "pass", tenant_id)
+        .await;
     assert!(matches!(result, Err(AuthError::AccountSuspended)));
 }
 
@@ -185,6 +193,8 @@ async fn authenticate_no_password_set() {
         .returning(move |_, _| Ok(creds_clone.clone()));
 
     let svc = PasswordService::new(Arc::new(mock_users), Arc::new(mock_creds));
-    let result = svc.authenticate("alice@example.com", "anypass", tenant_id).await;
+    let result = svc
+        .authenticate("alice@example.com", "anypass", tenant_id)
+        .await;
     assert!(matches!(result, Err(AuthError::InvalidCredentials)));
 }

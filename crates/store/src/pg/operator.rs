@@ -19,9 +19,9 @@ pub struct PgOperatorCredentialsRepo {
 
 fn row_to_operator(row: &sqlx::postgres::PgRow) -> Result<Operator, StoreError> {
     let status_str: String = row.try_get("status").map_err(map_row_err)?;
-    let status: OperatorStatus = status_str.parse().map_err(|_| {
-        StoreError::Database(format!("unknown operator status '{status_str}'"))
-    })?;
+    let status: OperatorStatus = status_str
+        .parse()
+        .map_err(|_| StoreError::Database(format!("unknown operator status '{status_str}'")))?;
     Ok(Operator {
         id: row.try_get("id").map_err(map_row_err)?,
         email: row.try_get("email").map_err(map_row_err)?,
@@ -78,13 +78,11 @@ impl irongate_core::repositories::OperatorRepository for PgOperatorRepo {
     }
 
     async fn get_by_email(&self, email: &str) -> Result<Operator, StoreError> {
-        let row = sqlx::query(
-            "SELECT * FROM operators WHERE email = $1 AND deleted_at IS NULL",
-        )
-        .bind(email)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(map_db_err)?;
+        let row = sqlx::query("SELECT * FROM operators WHERE email = $1 AND deleted_at IS NULL")
+            .bind(email)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_db_err)?;
         match row {
             Some(r) => row_to_operator(&r),
             None => Err(StoreError::NotFound(format!("operator with email {email}"))),
@@ -147,10 +145,7 @@ impl irongate_core::repositories::OperatorRepository for PgOperatorRepo {
 
 #[async_trait]
 impl irongate_core::repositories::OperatorCredentialsRepository for PgOperatorCredentialsRepo {
-    async fn create(
-        &self,
-        creds: OperatorCredentials,
-    ) -> Result<OperatorCredentials, StoreError> {
+    async fn create(&self, creds: OperatorCredentials) -> Result<OperatorCredentials, StoreError> {
         let row = sqlx::query(
             "INSERT INTO operator_credentials (operator_id, password_hash, created_at, updated_at)
              VALUES ($1,$2,$3,$4)
@@ -170,13 +165,11 @@ impl irongate_core::repositories::OperatorCredentialsRepository for PgOperatorCr
         &self,
         operator_id: Uuid,
     ) -> Result<OperatorCredentials, StoreError> {
-        let row = sqlx::query(
-            "SELECT * FROM operator_credentials WHERE operator_id = $1",
-        )
-        .bind(operator_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(map_db_err)?;
+        let row = sqlx::query("SELECT * FROM operator_credentials WHERE operator_id = $1")
+            .bind(operator_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_db_err)?;
         match row {
             Some(r) => row_to_creds(&r),
             None => Err(StoreError::NotFound(format!(
@@ -185,10 +178,7 @@ impl irongate_core::repositories::OperatorCredentialsRepository for PgOperatorCr
         }
     }
 
-    async fn update(
-        &self,
-        creds: OperatorCredentials,
-    ) -> Result<OperatorCredentials, StoreError> {
+    async fn update(&self, creds: OperatorCredentials) -> Result<OperatorCredentials, StoreError> {
         let row = sqlx::query(
             "UPDATE operator_credentials
              SET password_hash = $1, updated_at = $2

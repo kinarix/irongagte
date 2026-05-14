@@ -40,7 +40,10 @@ impl TotpService {
 
         creds.totp_secret = Some(secret.clone());
         creds.updated_at = OffsetDateTime::now_utc();
-        self.credentials.update(creds).await.map_err(AuthError::Store)?;
+        self.credentials
+            .update(creds)
+            .await
+            .map_err(AuthError::Store)?;
 
         Ok((secret, uri))
     }
@@ -58,7 +61,10 @@ impl TotpService {
             .await
             .map_err(AuthError::Store)?;
 
-        let secret = creds.totp_secret.as_deref().ok_or(AuthError::InvalidMfaCode)?;
+        let secret = creds
+            .totp_secret
+            .as_deref()
+            .ok_or(AuthError::InvalidMfaCode)?;
 
         let valid = verify_totp(secret, code)
             .map_err(|_| AuthError::Internal("TOTP verify failed".into()))?;
@@ -69,7 +75,10 @@ impl TotpService {
 
         creds.totp_enabled = true;
         creds.updated_at = OffsetDateTime::now_utc();
-        self.credentials.update(creds).await.map_err(AuthError::Store)?;
+        self.credentials
+            .update(creds)
+            .await
+            .map_err(AuthError::Store)?;
 
         Ok(())
     }
@@ -91,7 +100,10 @@ impl TotpService {
             return Ok(());
         }
 
-        let secret = creds.totp_secret.as_deref().ok_or(AuthError::InvalidMfaCode)?;
+        let secret = creds
+            .totp_secret
+            .as_deref()
+            .ok_or(AuthError::InvalidMfaCode)?;
 
         let valid = verify_totp(secret, code)
             .map_err(|_| AuthError::Internal("TOTP verify failed".into()))?;
@@ -104,11 +116,7 @@ impl TotpService {
     }
 
     /// Disable TOTP for a user.
-    pub async fn disable(
-        &self,
-        user_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<(), AuthError> {
+    pub async fn disable(&self, user_id: Uuid, tenant_id: Uuid) -> Result<(), AuthError> {
         let mut creds = self
             .credentials
             .get_by_user_id(user_id, tenant_id)
@@ -118,7 +126,10 @@ impl TotpService {
         creds.totp_enabled = false;
         creds.totp_secret = None;
         creds.updated_at = OffsetDateTime::now_utc();
-        self.credentials.update(creds).await.map_err(AuthError::Store)?;
+        self.credentials
+            .update(creds)
+            .await
+            .map_err(AuthError::Store)?;
 
         Ok(())
     }

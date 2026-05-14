@@ -1,8 +1,7 @@
 use irongate_core::CryptoError;
 use jsonwebtoken::{
-    Algorithm,
-    EncodingKey,
     jwk::{CommonParameters, Jwk, JwkSet},
+    Algorithm, EncodingKey,
 };
 
 use crate::keys::{KeyAlgorithm, SigningKeyRecord};
@@ -111,7 +110,10 @@ mod tests {
         let json = jwks_to_json(&jwks).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         let key = &v["keys"][0];
-        assert!(key["d"].is_null(), "RSA private exponent 'd' must not be in JWKS");
+        assert!(
+            key["d"].is_null(),
+            "RSA private exponent 'd' must not be in JWKS"
+        );
         assert!(!key["n"].is_null(), "RSA modulus 'n' should be present");
         assert!(!key["e"].is_null(), "RSA exponent 'e' should be present");
     }
@@ -123,7 +125,10 @@ mod tests {
         let json = jwks_to_json(&jwks).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         let key = &v["keys"][0];
-        assert!(key["d"].is_null(), "EC private scalar 'd' must not be in JWKS");
+        assert!(
+            key["d"].is_null(),
+            "EC private scalar 'd' must not be in JWKS"
+        );
         assert!(!key["x"].is_null(), "EC x coordinate should be present");
         assert!(!key["y"].is_null(), "EC y coordinate should be present");
     }

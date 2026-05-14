@@ -16,6 +16,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
+    audit,
     authz_op::{require_perm, Scope},
     error::Result,
     handlers::admin_auth::AdminClaims,
@@ -84,6 +85,15 @@ pub async fn create_tenant(
         deleted_at: None,
     };
     let created = state.tenants.create(tenant).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(created.id),
+        "tenant.create",
+        Some(created.id),
+        serde_json::json!({ "slug": created.slug, "name": created.name }),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(tenant_to_json(&created))))
 }
 
@@ -115,6 +125,15 @@ pub async fn update_tenant(
     }
     tenant.updated_at = OffsetDateTime::now_utc();
     let updated = state.tenants.update(tenant).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(updated.id),
+        "tenant.update",
+        Some(updated.id),
+        serde_json::json!({ "slug": updated.slug }),
+    )
+    .await;
     Ok(Json(tenant_to_json(&updated)))
 }
 
@@ -126,5 +145,14 @@ pub async fn delete_tenant(
     // Deleting a tenant is platform-level — require a global permission.
     require_perm(&state, &claims, Scope::Global, TENANTS, DELETE).await?;
     state.tenants.soft_delete(id).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(id),
+        "tenant.delete",
+        Some(id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -16,6 +16,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
+    audit,
     authz_op::{require_perm, Scope},
     error::Result,
     handlers::admin_auth::AdminClaims,
@@ -84,7 +85,14 @@ pub async fn create_group(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateGroupRequest>,
 ) -> Result<(StatusCode, Json<Value>)> {
-    require_perm(&state, &claims, Scope::Tenant(req.tenant_id), GROUPS, CREATE).await?;
+    require_perm(
+        &state,
+        &claims,
+        Scope::Tenant(req.tenant_id),
+        GROUPS,
+        CREATE,
+    )
+    .await?;
     let now = OffsetDateTime::now_utc();
     let group = Group {
         id: Uuid::new_v4(),
@@ -96,6 +104,15 @@ pub async fn create_group(
         updated_at: now,
     };
     let created = state.groups.create(group).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(created.tenant_id),
+        "group.create",
+        Some(created.id),
+        serde_json::json!({ "display_name": created.display_name, "priority": created.priority }),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(group_to_json(&created))))
 }
 
@@ -128,6 +145,15 @@ pub async fn update_group(
     }
     group.updated_at = OffsetDateTime::now_utc();
     let updated = state.groups.update(group).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(updated.tenant_id),
+        "group.update",
+        Some(updated.id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(Json(group_to_json(&updated)))
 }
 
@@ -138,6 +164,15 @@ pub async fn delete_group(
 ) -> Result<StatusCode> {
     require_perm(&state, &claims, Scope::Tenant(tenant_id), GROUPS, DELETE).await?;
     state.groups.delete(id, tenant_id).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(tenant_id),
+        "group.delete",
+        Some(id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -169,6 +204,15 @@ pub async fn add_group_member(
 ) -> Result<StatusCode> {
     require_perm(&state, &claims, Scope::Tenant(tenant_id), GROUPS, ASSIGN).await?;
     state.groups.add_member(id, req.user_id, tenant_id).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(tenant_id),
+        "group.member_added",
+        Some(id),
+        serde_json::json!({ "user_id": req.user_id }),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -178,6 +222,18 @@ pub async fn remove_group_member(
     Path((tenant_id, group_id, user_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> Result<StatusCode> {
     require_perm(&state, &claims, Scope::Tenant(tenant_id), GROUPS, REVOKE).await?;
-    state.groups.remove_member(group_id, user_id, tenant_id).await?;
+    state
+        .groups
+        .remove_member(group_id, user_id, tenant_id)
+        .await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(tenant_id),
+        "group.member_removed",
+        Some(group_id),
+        serde_json::json!({ "user_id": user_id }),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }

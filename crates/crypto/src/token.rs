@@ -25,18 +25,23 @@ pub fn verify_token(token: &str, stored_hash: &str) -> bool {
 }
 
 fn bytes_to_hex(bytes: &[u8]) -> String {
-    bytes.iter().fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
-        use std::fmt::Write;
-        let _ = write!(s, "{b:02x}");
-        s
-    })
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
+            use std::fmt::Write;
+            let _ = write!(s, "{b:02x}");
+            s
+        })
 }
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
-    a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    a.iter()
+        .zip(b.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
 }
 
 #[cfg(test)]
@@ -73,20 +78,27 @@ mod tests {
     #[test]
     fn token_is_url_safe() {
         let t = generate_token();
-        assert!(t.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_'));
+        assert!(t
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_'));
     }
 
     #[test]
     fn known_sha256_vector() {
         // echo -n "abc" | sha256sum → ba7816bf8f01cfea414140de5dae2ec73b00361bbef0469f492c347e001facc5
         let hash = hash_token("abc");
-        assert_eq!(hash, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(
+            hash,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 
     #[test]
     fn hash_is_lowercase_hex() {
         let hash = hash_token("test");
-        assert!(hash.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)));
+        assert!(hash
+            .chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)));
         assert_eq!(hash.len(), 64);
     }
 }

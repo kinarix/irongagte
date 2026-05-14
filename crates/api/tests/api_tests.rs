@@ -15,25 +15,20 @@ use irongate_authz::AuthzService;
 use irongate_core::{
     errors::StoreError,
     repositories::{
-        ApplicationRepository, AuditRepository, AuthCodeStore, AuthCodeData,
-        ClaimDefinitionRepository, GroupClaimRepository, GroupRepository, IdpConfigRepository,
-        IdentityRepository, OperatorCredentialsRepository, OperatorPermissionRepository,
+        ApplicationRepository, AuditRepository, AuthCodeData, AuthCodeStore,
+        ClaimDefinitionRepository, GroupClaimRepository, GroupRepository, IdentityRepository,
+        IdpConfigRepository, OperatorCredentialsRepository, OperatorPermissionRepository,
         OperatorRepository, OperatorRoleRepository, PasskeyRepository, RefreshTokenRepository,
         ResolvedGroupClaim, ResolvedUserClaim, SessionRepository, TenantRepository,
         UserClaimRepository, UserCredentialsRepository, UserRepository,
     },
     types::{
-        Application, AppType, AuditEvent, ClaimDefinition, Group, GroupClaim, Identity,
-        IdpConfig, Operator, OperatorCredentials, OperatorPermission, OperatorRole,
-        PasskeyCredential, RefreshToken, Session, Tenant, User, UserClaim, UserCredentials,
-        UserStatus,
+        AppType, Application, AuditEvent, ClaimDefinition, Group, GroupClaim, Identity, IdpConfig,
+        Operator, OperatorCredentials, OperatorPermission, OperatorRole, PasskeyCredential,
+        RefreshToken, Session, Tenant, User, UserClaim, UserCredentials, UserStatus,
     },
 };
-use irongate_crypto::{
-    hash::hash_password,
-    jwt::sign,
-    keys::generate_rsa_key,
-};
+use irongate_crypto::{hash::hash_password, jwt::sign, keys::generate_rsa_key};
 use jsonwebtoken::Algorithm;
 use mockall::mock;
 use serde_json::Value;
@@ -55,7 +50,6 @@ mock! {
         async fn list(&self, tenant_id: Uuid, limit: i64, offset: i64) -> Result<Vec<User>, StoreError>;
     }
 }
-
 
 mock! {
     TenantRepo {}
@@ -307,14 +301,22 @@ mock! {
 
 fn test_settings() -> Settings {
     Settings {
-        server: ServerConfig { host: "127.0.0.1".into(), port: 3000 },
+        server: ServerConfig {
+            host: "127.0.0.1".into(),
+            port: 3000,
+        },
         database: DatabaseConfig {
             url: "postgres://localhost/test".into(),
             max_connections: 1,
         },
-        redis: RedisConfig { url: "redis://localhost".into() },
+        redis: RedisConfig {
+            url: "redis://localhost".into(),
+        },
         base_url: "https://auth.test".into(),
-        log: LogConfig { level: "off".into(), format: "json".into() },
+        log: LogConfig {
+            level: "off".into(),
+            format: "json".into(),
+        },
         tokens: TokenConfig {
             access_token_ttl_seconds: 3600,
             refresh_token_ttl_seconds: 86400,
@@ -382,7 +384,11 @@ fn empty_authz() -> AuthzService {
     user_claims
         .expect_list_for_user_in_app()
         .returning(|_, _| Ok(vec![]));
-    AuthzService::new(Arc::new(defs), Arc::new(group_claims), Arc::new(user_claims))
+    AuthzService::new(
+        Arc::new(defs),
+        Arc::new(group_claims),
+        Arc::new(user_claims),
+    )
 }
 
 fn test_application(tenant_id: Uuid) -> Application {
@@ -462,9 +468,8 @@ fn build_app(
     session_sessions: MockSessionRepo,
     session_rts: MockRefreshTokenRepo,
 ) -> axum::Router {
-    let signing_key = Arc::new(
-        generate_rsa_key(Uuid::nil(), 1).expect("failed to generate RSA key"),
-    );
+    let signing_key =
+        Arc::new(generate_rsa_key(Uuid::nil(), 1).expect("failed to generate RSA key"));
     let config = Arc::new(test_settings());
 
     let users: Arc<dyn UserRepository> = Arc::new(users);
@@ -490,7 +495,7 @@ fn build_app(
         passkeys: Arc::new(MockPasskeyRepo::new()),
         identities: Arc::new(MockIdentityRepo::new()),
         idp_configs: Arc::new(MockIdpConfigRepo::new()),
-        audit: Arc::new(MockAuditRepo::new()),
+        audit: Arc::new(permissive_audit()),
         operators: Arc::new(MockOperatorRepo::new()),
         operator_credentials: Arc::new(MockOperatorCredsRepo::new()),
         operator_permissions: Arc::new(MockOperatorPermRepo::new()),
@@ -506,6 +511,14 @@ fn build_app(
     });
 
     build_router(state)
+}
+
+/// AuditRepo mock that accepts any `record()` and returns Ok. Tests that want
+/// to assert on specific audit events should construct their own mock instead.
+fn permissive_audit() -> MockAuditRepo {
+    let mut audit = MockAuditRepo::new();
+    audit.expect_record().returning(|_| Ok(()));
+    audit
 }
 
 /// Convenience builder for tests that don't exercise the token endpoint.
@@ -528,7 +541,9 @@ fn simple_app(
 }
 
 async fn body_json(resp: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
@@ -544,7 +559,12 @@ async fn health_returns_ok() {
     );
 
     let resp = app
-        .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
 
@@ -626,7 +646,12 @@ async fn list_users_missing_tenant_header_returns_400() {
     );
 
     let resp = app
-        .oneshot(Request::builder().uri("/api/v1/users").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/users")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
 
@@ -775,9 +800,9 @@ async fn get_user_not_found_returns_404() {
     let user_id = Uuid::new_v4();
 
     let mut users = MockUserRepo::new();
-    users.expect_get_by_id().returning(|id, _| {
-        Err(StoreError::NotFound(format!("user {id} not found")))
-    });
+    users
+        .expect_get_by_id()
+        .returning(|id, _| Err(StoreError::NotFound(format!("user {id} not found"))));
 
     let app = simple_app(
         users,
@@ -845,7 +870,12 @@ async fn list_tenants_returns_empty_list() {
     );
 
     let resp = app
-        .oneshot(Request::builder().uri("/api/v1/tenants").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/tenants")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
 
@@ -892,7 +922,9 @@ async fn get_tenant_returns_200() {
     let tenant_clone = tenant.clone();
 
     let mut tenants = MockTenantRepo::new();
-    tenants.expect_get_by_id().returning(move |_| Ok(tenant_clone.clone()));
+    tenants
+        .expect_get_by_id()
+        .returning(move |_| Ok(tenant_clone.clone()));
 
     let app = simple_app(
         MockUserRepo::new(),
@@ -981,9 +1013,9 @@ async fn token_unsupported_grant_type_returns_400() {
 async fn token_password_grant_unknown_client_returns_401() {
     let tenant_id = Uuid::new_v4();
     let mut applications = MockApplicationRepo::new();
-    applications.expect_get_by_client_id().returning(|_, _| {
-        Err(StoreError::NotFound("application not found".into()))
-    });
+    applications
+        .expect_get_by_client_id()
+        .returning(|_, _| Err(StoreError::NotFound("application not found".into())));
 
     let app = simple_app(
         MockUserRepo::new(),
@@ -1098,23 +1130,38 @@ async fn token_password_grant_with_openid_scope_includes_id_token() {
     let session = test_session(user.id, tenant_id);
     let rt = test_refresh_token(session.id, app_fixture.id);
 
-    let (user_c, creds_c, app_c, sess_c, rt_c) =
-        (user.clone(), creds.clone(), app_fixture.clone(), session.clone(), rt.clone());
+    let (user_c, creds_c, app_c, sess_c, rt_c) = (
+        user.clone(),
+        creds.clone(),
+        app_fixture.clone(),
+        session.clone(),
+        rt.clone(),
+    );
 
     let mut applications = MockApplicationRepo::new();
-    applications.expect_get_by_client_id().returning(move |_, _| Ok(app_c.clone()));
+    applications
+        .expect_get_by_client_id()
+        .returning(move |_, _| Ok(app_c.clone()));
 
     let mut pw_users = MockUserRepo::new();
-    pw_users.expect_get_by_email().returning(move |_, _| Ok(user_c.clone()));
+    pw_users
+        .expect_get_by_email()
+        .returning(move |_, _| Ok(user_c.clone()));
 
     let mut pw_creds = MockUserCredRepo::new();
-    pw_creds.expect_get_by_user_id().returning(move |_, _| Ok(creds_c.clone()));
+    pw_creds
+        .expect_get_by_user_id()
+        .returning(move |_, _| Ok(creds_c.clone()));
 
     let mut session_sessions = MockSessionRepo::new();
-    session_sessions.expect_create().returning(move |_| Ok(sess_c.clone()));
+    session_sessions
+        .expect_create()
+        .returning(move |_| Ok(sess_c.clone()));
 
     let mut session_rts = MockRefreshTokenRepo::new();
-    session_rts.expect_create().returning(move |_| Ok(rt_c.clone()));
+    session_rts
+        .expect_create()
+        .returning(move |_| Ok(rt_c.clone()));
 
     let app = build_app(
         MockUserRepo::new(),
@@ -1147,7 +1194,10 @@ async fn token_password_grant_with_openid_scope_includes_id_token() {
 
     assert_eq!(resp.status(), StatusCode::OK);
     let resp_body = body_json(resp).await;
-    assert!(resp_body["id_token"].is_string(), "openid scope must produce id_token");
+    assert!(
+        resp_body["id_token"].is_string(),
+        "openid scope must produce id_token"
+    );
 }
 
 // ── Userinfo ──────────────────────────────────────────────────────────────────
@@ -1186,9 +1236,7 @@ async fn userinfo_with_valid_token_returns_claims() {
         .returning(move |_, _| Ok(user_clone.clone()));
 
     // Build state manually so we can extract the signing key for minting the token
-    let signing_key = Arc::new(
-        generate_rsa_key(Uuid::nil(), 1).expect("generate_rsa_key failed"),
-    );
+    let signing_key = Arc::new(generate_rsa_key(Uuid::nil(), 1).expect("generate_rsa_key failed"));
     let config = Arc::new(test_settings());
     let users_arc: Arc<dyn UserRepository> = Arc::new(users);
 
@@ -1211,7 +1259,7 @@ async fn userinfo_with_valid_token_returns_claims() {
         passkeys: Arc::new(MockPasskeyRepo::new()),
         identities: Arc::new(MockIdentityRepo::new()),
         idp_configs: Arc::new(MockIdpConfigRepo::new()),
-        audit: Arc::new(MockAuditRepo::new()),
+        audit: Arc::new(permissive_audit()),
         operators: Arc::new(MockOperatorRepo::new()),
         operator_credentials: Arc::new(MockOperatorCredsRepo::new()),
         operator_permissions: Arc::new(MockOperatorPermRepo::new()),
@@ -1239,8 +1287,13 @@ async fn userinfo_with_valid_token_returns_claims() {
         tenant_id: tenant_id.to_string(),
         extras: Default::default(),
     };
-    let token = sign(&claims, &signing_key.private_key_pem, Algorithm::RS256, None)
-        .expect("sign failed");
+    let token = sign(
+        &claims,
+        &signing_key.private_key_pem,
+        Algorithm::RS256,
+        None,
+    )
+    .expect("sign failed");
 
     let app = build_router(state);
 
@@ -1297,10 +1350,11 @@ mod admin_authz {
         }
     }
 
-    fn admin_app(operator_roles: MockOperatorRoleRepo) -> (axum::Router, Arc<irongate_crypto::keys::SigningKeyRecord>) {
-        let signing_key = Arc::new(
-            generate_rsa_key(Uuid::nil(), 1).expect("generate_rsa_key failed"),
-        );
+    fn admin_app(
+        operator_roles: MockOperatorRoleRepo,
+    ) -> (axum::Router, Arc<irongate_crypto::keys::SigningKeyRecord>) {
+        let signing_key =
+            Arc::new(generate_rsa_key(Uuid::nil(), 1).expect("generate_rsa_key failed"));
         let config = Arc::new(test_settings());
         let password_svc = Arc::new(PasswordService::new(
             Arc::new(MockUserRepo::new()) as Arc<dyn UserRepository>,
@@ -1322,7 +1376,7 @@ mod admin_authz {
             passkeys: Arc::new(MockPasskeyRepo::new()),
             identities: Arc::new(MockIdentityRepo::new()),
             idp_configs: Arc::new(MockIdpConfigRepo::new()),
-            audit: Arc::new(MockAuditRepo::new()),
+            audit: Arc::new(permissive_audit()),
             operators: Arc::new(MockOperatorRepo::new()),
             operator_credentials: Arc::new(MockOperatorCredsRepo::new()),
             operator_permissions: Arc::new(MockOperatorPermRepo::new()),
@@ -1366,7 +1420,12 @@ mod admin_authz {
             .await
             .unwrap();
 
-        assert_eq!(resp.status(), StatusCode::OK, "expected 200, got {}", resp.status());
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "expected 200, got {}",
+            resp.status()
+        );
     }
 
     /// A tenant-scoped operator (perm only for tenant A) is forbidden on tenant B's
@@ -1451,5 +1510,129 @@ mod admin_authz {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// Bulk import creates each user, adds them to the given group, and records
+    /// one summary audit event in addition to per-user audits. Duplicates raise
+    /// `Conflict` and are counted as skipped when `skip_duplicates` is true.
+    #[tokio::test]
+    async fn bulk_import_creates_users_and_adds_to_group() {
+        let operator_id = Uuid::new_v4();
+        let tenant_id = Uuid::new_v4();
+        let group_id = Uuid::new_v4();
+
+        let mut roles = MockOperatorRoleRepo::new();
+        roles
+            .expect_list_permissions_for_operator_in_tenant()
+            .returning(|_, _| Ok(vec![perm("users", "create")]));
+
+        // Users repo: first create succeeds, second emits Conflict (duplicate email).
+        let mut users = MockUserRepo::new();
+        users.expect_list().returning(|_, _, _| Ok(vec![]));
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        users.expect_create().returning(move |u| {
+            let n = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if n == 1 {
+                Err(StoreError::Conflict("duplicate email".into()))
+            } else {
+                Ok(u)
+            }
+        });
+
+        let mut groups = MockGroupRepo::new();
+        let add_member_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let amc = add_member_calls.clone();
+        groups.expect_add_member().returning(move |_, _, _| {
+            amc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        });
+
+        // Audit: capture record() calls so we can assert on event types.
+        let mut audit = MockAuditRepo::new();
+        let recorded: Arc<std::sync::Mutex<Vec<String>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded_clone = recorded.clone();
+        audit.expect_record().returning(move |ev: AuditEvent| {
+            recorded_clone.lock().unwrap().push(ev.event_type);
+            Ok(())
+        });
+
+        let signing_key =
+            Arc::new(generate_rsa_key(Uuid::nil(), 1).expect("generate_rsa_key failed"));
+        let config = Arc::new(test_settings());
+        let password_svc = Arc::new(PasswordService::new(
+            Arc::new(MockUserRepo::new()) as Arc<dyn UserRepository>,
+            Arc::new(MockUserCredRepo::new()) as Arc<dyn UserCredentialsRepository>,
+        ));
+        let session_svc = Arc::new(SessionService::new(
+            Arc::new(MockSessionRepo::new()) as Arc<dyn SessionRepository>,
+            Arc::new(MockRefreshTokenRepo::new()) as Arc<dyn RefreshTokenRepository>,
+        ));
+        let state = Arc::new(AppState {
+            config,
+            users: Arc::new(users),
+            tenants: Arc::new(MockTenantRepo::new()),
+            applications: Arc::new(MockApplicationRepo::new()),
+            refresh_tokens: Arc::new(MockRefreshTokenRepo::new()),
+            groups: Arc::new(groups),
+            passkeys: Arc::new(MockPasskeyRepo::new()),
+            identities: Arc::new(MockIdentityRepo::new()),
+            idp_configs: Arc::new(MockIdpConfigRepo::new()),
+            audit: Arc::new(audit),
+            operators: Arc::new(MockOperatorRepo::new()),
+            operator_credentials: Arc::new(MockOperatorCredsRepo::new()),
+            operator_permissions: Arc::new(MockOperatorPermRepo::new()),
+            operator_roles_repo: Arc::new(roles),
+            claim_definitions: Arc::new(MockClaimDefRepo::new()),
+            group_claims: Arc::new(MockGroupClaimRepo::new()),
+            user_claims: Arc::new(MockUserClaimRepo::new()),
+            auth_codes: Arc::new(MockAuthCodeStoreRepo::new()),
+            password_svc,
+            session_svc,
+            authz_svc: Arc::new(empty_authz()),
+            signing_key: signing_key.clone(),
+        });
+        let app = build_router(state);
+        let token = make_operator_token(&signing_key.private_key_pem, operator_id);
+
+        let body = serde_json::json!({
+            "users": [
+                {"email": "alice@example.com", "name": "Alice"},
+                {"email": "dup@example.com"},
+                {"email": "carol@example.com"},
+            ],
+            "group_id": group_id,
+            "skip_duplicates": true,
+        });
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(format!("/admin/api/v1/tenants/{tenant_id}/users/import"))
+                    .header("Authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let resp_body = body_json(resp).await;
+        assert_eq!(resp_body["created"], 2);
+        assert_eq!(resp_body["skipped"], 1);
+        assert_eq!(resp_body["errors"].as_array().unwrap().len(), 0);
+        assert_eq!(
+            add_member_calls.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "every successfully-created user should be added to the group"
+        );
+
+        let events = recorded.lock().unwrap().clone();
+        assert!(
+            events.contains(&"users.bulk_import".to_string()),
+            "expected users.bulk_import audit event, got {events:?}"
+        );
     }
 }

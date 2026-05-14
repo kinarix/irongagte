@@ -40,17 +40,17 @@ pub async fn list_users(
         .await
         .map_err(ScimError::from)?;
 
-    let filter_expr = params
-        .filter
-        .as_deref()
-        .map(parse)
-        .transpose()?;
+    let filter_expr = params.filter.as_deref().map(parse).transpose()?;
 
     let resources: Vec<ScimUser> = users
         .iter()
         .filter(|u| {
             if let Some(ref f) = filter_expr {
-                let active_str = if matches!(u.status, UserStatus::Active) { "true" } else { "false" };
+                let active_str = if matches!(u.status, UserStatus::Active) {
+                    "true"
+                } else {
+                    "false"
+                };
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("userName", u.email.as_str());
                 if let Some(n) = u.name.as_deref() {
@@ -83,7 +83,10 @@ pub async fn get_user(
         .await
         .map_err(ScimError::from)?;
 
-    Ok((StatusCode::OK, Json(ScimUser::from_user(&user, &state.base_url))))
+    Ok((
+        StatusCode::OK,
+        Json(ScimUser::from_user(&user, &state.base_url)),
+    ))
 }
 
 pub async fn create_user(
@@ -96,13 +99,17 @@ pub async fn create_user(
         tenant_id: state.tenant_id,
         email: input.user_name.clone(),
         email_verified: false,
-        name: input.display_name.or_else(|| {
-            input.name.as_ref().and_then(|n| n.formatted.clone())
-        }),
+        name: input
+            .display_name
+            .or_else(|| input.name.as_ref().and_then(|n| n.formatted.clone())),
         given_name: input.name.as_ref().and_then(|n| n.given_name.clone()),
         family_name: input.name.as_ref().and_then(|n| n.family_name.clone()),
         picture_url: None,
-        status: if input.active { UserStatus::Active } else { UserStatus::Suspended },
+        status: if input.active {
+            UserStatus::Active
+        } else {
+            UserStatus::Suspended
+        },
         attributes: serde_json::json!({}),
         created_at: now,
         updated_at: now,
@@ -134,13 +141,17 @@ pub async fn replace_user(
         tenant_id: existing.tenant_id,
         email: input.user_name.clone(),
         email_verified: existing.email_verified,
-        name: input.display_name.or_else(|| {
-            input.name.as_ref().and_then(|n| n.formatted.clone())
-        }),
+        name: input
+            .display_name
+            .or_else(|| input.name.as_ref().and_then(|n| n.formatted.clone())),
         given_name: input.name.as_ref().and_then(|n| n.given_name.clone()),
         family_name: input.name.as_ref().and_then(|n| n.family_name.clone()),
         picture_url: existing.picture_url,
-        status: if input.active { UserStatus::Active } else { UserStatus::Suspended },
+        status: if input.active {
+            UserStatus::Active
+        } else {
+            UserStatus::Suspended
+        },
         attributes: existing.attributes,
         created_at: existing.created_at,
         updated_at: OffsetDateTime::now_utc(),
@@ -149,7 +160,10 @@ pub async fn replace_user(
     };
 
     let saved = state.users.update(updated).await.map_err(ScimError::from)?;
-    Ok((StatusCode::OK, Json(ScimUser::from_user(&saved, &state.base_url))))
+    Ok((
+        StatusCode::OK,
+        Json(ScimUser::from_user(&saved, &state.base_url)),
+    ))
 }
 
 pub async fn patch_user(
@@ -174,7 +188,11 @@ pub async fn patch_user(
                 let active = value
                     .and_then(|v| v.as_bool())
                     .ok_or_else(|| ScimError::BadRequest("active must be bool".into()))?;
-                user.status = if active { UserStatus::Active } else { UserStatus::Suspended };
+                user.status = if active {
+                    UserStatus::Active
+                } else {
+                    UserStatus::Suspended
+                };
             }
             (crate::types::PatchOpType::Replace, "username")
             | (crate::types::PatchOpType::Add, "username") => {
@@ -196,7 +214,10 @@ pub async fn patch_user(
 
     user.updated_at = OffsetDateTime::now_utc();
     let saved = state.users.update(user).await.map_err(ScimError::from)?;
-    Ok((StatusCode::OK, Json(ScimUser::from_user(&saved, &state.base_url))))
+    Ok((
+        StatusCode::OK,
+        Json(ScimUser::from_user(&saved, &state.base_url)),
+    ))
 }
 
 pub async fn delete_user(

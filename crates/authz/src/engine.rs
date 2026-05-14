@@ -85,9 +85,7 @@ impl AuthzService {
 
                     // Group rows are already returned in
                     // (priority DESC, created_at ASC) order by the repo.
-                    if let Some(winner) =
-                        group_rows.iter().find(|r| r.claim_def_id == def.id)
-                    {
+                    if let Some(winner) = group_rows.iter().find(|r| r.claim_def_id == def.id) {
                         out.insert(token_key, Value::String(winner.value.clone()));
                     }
                 }

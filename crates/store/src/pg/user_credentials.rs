@@ -50,18 +50,19 @@ impl irongate_core::repositories::UserCredentialsRepository for PgUserCredential
         user_id: Uuid,
         tenant_id: Uuid,
     ) -> Result<UserCredentials, StoreError> {
-        let row = sqlx::query(
-            "SELECT * FROM user_credentials WHERE user_id = $1 AND tenant_id = $2",
-        )
-        .bind(user_id)
-        .bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(map_db_err)?;
+        let row =
+            sqlx::query("SELECT * FROM user_credentials WHERE user_id = $1 AND tenant_id = $2")
+                .bind(user_id)
+                .bind(tenant_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(map_db_err)?;
 
         match row {
             Some(r) => row_to_creds(&r),
-            None => Err(StoreError::NotFound(format!("credentials for user {user_id}"))),
+            None => Err(StoreError::NotFound(format!(
+                "credentials for user {user_id}"
+            ))),
         }
     }
 
@@ -92,14 +93,12 @@ impl irongate_core::repositories::UserCredentialsRepository for PgUserCredential
     }
 
     async fn delete(&self, user_id: Uuid, tenant_id: Uuid) -> Result<(), StoreError> {
-        sqlx::query(
-            "DELETE FROM user_credentials WHERE user_id = $1 AND tenant_id = $2",
-        )
-        .bind(user_id)
-        .bind(tenant_id)
-        .execute(&self.pool)
-        .await
-        .map_err(map_db_err)?;
+        sqlx::query("DELETE FROM user_credentials WHERE user_id = $1 AND tenant_id = $2")
+            .bind(user_id)
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
+            .map_err(map_db_err)?;
         Ok(())
     }
 }

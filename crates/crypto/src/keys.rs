@@ -39,10 +39,7 @@ impl SigningKeyRecord {
 }
 
 /// Generates a new RSA-2048 signing key record.
-pub fn generate_rsa_key(
-    tenant_id: Uuid,
-    ttl_days: i64,
-) -> Result<SigningKeyRecord, CryptoError> {
+pub fn generate_rsa_key(tenant_id: Uuid, ttl_days: i64) -> Result<SigningKeyRecord, CryptoError> {
     let private = RsaPrivateKey::new(&mut OsRng, RSA_BITS)
         .map_err(|e| CryptoError::KeyGeneration(e.to_string()))?;
     let public = RsaPublicKey::from(&private);
@@ -70,10 +67,7 @@ pub fn generate_rsa_key(
 }
 
 /// Generates a new P-256 (ES256) signing key record.
-pub fn generate_ec_key(
-    tenant_id: Uuid,
-    ttl_days: i64,
-) -> Result<SigningKeyRecord, CryptoError> {
+pub fn generate_ec_key(tenant_id: Uuid, ttl_days: i64) -> Result<SigningKeyRecord, CryptoError> {
     let signing_key = EcSigningKey::random(&mut OsRng);
 
     let private_key_pem = signing_key

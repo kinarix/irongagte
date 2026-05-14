@@ -167,17 +167,14 @@ fn parse_primary<'a>(tokens: &'a [Token]) -> ParseResult<'a> {
 
 /// Evaluates a filter against a map of attribute → value strings.
 /// Used to post-filter results since we don't push all filters to SQL.
-pub fn matches_filter(
-    filter: &FilterExpr,
-    attrs: &std::collections::HashMap<&str, &str>,
-) -> bool {
+pub fn matches_filter(filter: &FilterExpr, attrs: &std::collections::HashMap<&str, &str>) -> bool {
     match filter {
-        FilterExpr::Eq(attr, val) => {
-            attrs.get(attr.as_str()).is_some_and(|v| v.eq_ignore_ascii_case(val))
-        }
-        FilterExpr::Ne(attr, val) => {
-            !attrs.get(attr.as_str()).is_some_and(|v| v.eq_ignore_ascii_case(val))
-        }
+        FilterExpr::Eq(attr, val) => attrs
+            .get(attr.as_str())
+            .is_some_and(|v| v.eq_ignore_ascii_case(val)),
+        FilterExpr::Ne(attr, val) => !attrs
+            .get(attr.as_str())
+            .is_some_and(|v| v.eq_ignore_ascii_case(val)),
         FilterExpr::Sw(attr, val) => attrs
             .get(attr.as_str())
             .is_some_and(|v| v.to_lowercase().starts_with(&val.to_lowercase())),
@@ -202,14 +199,23 @@ mod tests {
     #[test]
     fn eq_filter() {
         let f = parse(r#"userName eq "john@example.com""#).unwrap();
-        assert!(matches_filter(&f, &attrs(&[("userName", "john@example.com")])));
-        assert!(!matches_filter(&f, &attrs(&[("userName", "jane@example.com")])));
+        assert!(matches_filter(
+            &f,
+            &attrs(&[("userName", "john@example.com")])
+        ));
+        assert!(!matches_filter(
+            &f,
+            &attrs(&[("userName", "jane@example.com")])
+        ));
     }
 
     #[test]
     fn sw_filter() {
         let f = parse(r#"displayName sw "Eng""#).unwrap();
-        assert!(matches_filter(&f, &attrs(&[("displayName", "Engineering")])));
+        assert!(matches_filter(
+            &f,
+            &attrs(&[("displayName", "Engineering")])
+        ));
         assert!(!matches_filter(&f, &attrs(&[("displayName", "Sales")])));
     }
 
@@ -223,8 +229,14 @@ mod tests {
     #[test]
     fn and_filter() {
         let f = parse(r#"active eq "true" and userName sw "a""#).unwrap();
-        assert!(matches_filter(&f, &attrs(&[("active", "true"), ("userName", "alice")])));
-        assert!(!matches_filter(&f, &attrs(&[("active", "false"), ("userName", "alice")])));
+        assert!(matches_filter(
+            &f,
+            &attrs(&[("active", "true"), ("userName", "alice")])
+        ));
+        assert!(!matches_filter(
+            &f,
+            &attrs(&[("active", "false"), ("userName", "alice")])
+        ));
     }
 
     #[test]

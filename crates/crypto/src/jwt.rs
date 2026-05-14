@@ -27,36 +27,35 @@ pub fn verify<C: DeserializeOwned>(
     validation: &Validation,
 ) -> Result<TokenData<C>, CryptoError> {
     let decoding_key = decoding_key_from_pem(key_pem, algorithm)?;
-    decode::<C>(token, &decoding_key, validation)
-        .map_err(map_jwt_error)
+    decode::<C>(token, &decoding_key, validation).map_err(map_jwt_error)
 }
 
 fn encoding_key_from_pem(pem: &str, algorithm: Algorithm) -> Result<EncodingKey, CryptoError> {
     match algorithm {
-        Algorithm::RS256 | Algorithm::RS384 | Algorithm::RS512
-        | Algorithm::PS256 | Algorithm::PS384 | Algorithm::PS512 => {
-            EncodingKey::from_rsa_pem(pem.as_bytes())
-                .map_err(|e| CryptoError::InvalidKey(e.to_string()))
-        }
-        Algorithm::ES256 | Algorithm::ES384 => {
-            EncodingKey::from_ec_pem(pem.as_bytes())
-                .map_err(|e| CryptoError::InvalidKey(e.to_string()))
-        }
+        Algorithm::RS256
+        | Algorithm::RS384
+        | Algorithm::RS512
+        | Algorithm::PS256
+        | Algorithm::PS384
+        | Algorithm::PS512 => EncodingKey::from_rsa_pem(pem.as_bytes())
+            .map_err(|e| CryptoError::InvalidKey(e.to_string())),
+        Algorithm::ES256 | Algorithm::ES384 => EncodingKey::from_ec_pem(pem.as_bytes())
+            .map_err(|e| CryptoError::InvalidKey(e.to_string())),
         _ => Err(CryptoError::InvalidKey("unsupported algorithm".into())),
     }
 }
 
 fn decoding_key_from_pem(pem: &str, algorithm: Algorithm) -> Result<DecodingKey, CryptoError> {
     match algorithm {
-        Algorithm::RS256 | Algorithm::RS384 | Algorithm::RS512
-        | Algorithm::PS256 | Algorithm::PS384 | Algorithm::PS512 => {
-            DecodingKey::from_rsa_pem(pem.as_bytes())
-                .map_err(|e| CryptoError::InvalidKey(e.to_string()))
-        }
-        Algorithm::ES256 | Algorithm::ES384 => {
-            DecodingKey::from_ec_pem(pem.as_bytes())
-                .map_err(|e| CryptoError::InvalidKey(e.to_string()))
-        }
+        Algorithm::RS256
+        | Algorithm::RS384
+        | Algorithm::RS512
+        | Algorithm::PS256
+        | Algorithm::PS384
+        | Algorithm::PS512 => DecodingKey::from_rsa_pem(pem.as_bytes())
+            .map_err(|e| CryptoError::InvalidKey(e.to_string())),
+        Algorithm::ES256 | Algorithm::ES384 => DecodingKey::from_ec_pem(pem.as_bytes())
+            .map_err(|e| CryptoError::InvalidKey(e.to_string())),
         _ => Err(CryptoError::InvalidKey("unsupported algorithm".into())),
     }
 }
@@ -111,9 +110,13 @@ mod tests {
         let rec = generate_rsa_key(Uuid::new_v4(), 90).unwrap();
         let c = claims(3600);
         let token = sign(&c, &rec.private_key_pem, Algorithm::RS256, Some("key-1")).unwrap();
-        let data: TokenData<TestClaims> =
-            verify(&token, &rec.public_key_pem, Algorithm::RS256, &no_validation(Algorithm::RS256))
-                .unwrap();
+        let data: TokenData<TestClaims> = verify(
+            &token,
+            &rec.public_key_pem,
+            Algorithm::RS256,
+            &no_validation(Algorithm::RS256),
+        )
+        .unwrap();
         assert_eq!(data.claims.sub, c.sub);
         assert_eq!(data.header.kid.as_deref(), Some("key-1"));
     }
@@ -123,9 +126,13 @@ mod tests {
         let rec = generate_ec_key(Uuid::new_v4(), 90).unwrap();
         let c = claims(3600);
         let token = sign(&c, &rec.private_key_pem, Algorithm::ES256, None).unwrap();
-        let data: TokenData<TestClaims> =
-            verify(&token, &rec.public_key_pem, Algorithm::ES256, &no_validation(Algorithm::ES256))
-                .unwrap();
+        let data: TokenData<TestClaims> = verify(
+            &token,
+            &rec.public_key_pem,
+            Algorithm::ES256,
+            &no_validation(Algorithm::ES256),
+        )
+        .unwrap();
         assert_eq!(data.claims.sub, c.sub);
     }
 
@@ -140,7 +147,8 @@ mod tests {
         let token = sign(&c, &rec.private_key_pem, Algorithm::RS256, None).unwrap();
         let mut v = Validation::new(Algorithm::RS256);
         v.required_spec_claims.clear();
-        let err = verify::<TestClaims>(&token, &rec.public_key_pem, Algorithm::RS256, &v).unwrap_err();
+        let err =
+            verify::<TestClaims>(&token, &rec.public_key_pem, Algorithm::RS256, &v).unwrap_err();
         assert!(matches!(err, CryptoError::TokenExpired));
     }
 
@@ -196,14 +204,19 @@ mod tests {
 
         let rec = generate_rsa_key(Uuid::new_v4(), 90).unwrap();
         let now = jsonwebtoken::get_current_timestamp();
-        let c = AudClaims { sub: "u".into(), aud: "my-app".into(), exp: now + 3600 };
+        let c = AudClaims {
+            sub: "u".into(),
+            aud: "my-app".into(),
+            exp: now + 3600,
+        };
         let token = sign(&c, &rec.private_key_pem, Algorithm::RS256, None).unwrap();
 
         let mut v = Validation::new(Algorithm::RS256);
         v.set_audience(&["wrong-app"]);
         v.validate_exp = false;
 
-        let err = verify::<AudClaims>(&token, &rec.public_key_pem, Algorithm::RS256, &v).unwrap_err();
+        let err =
+            verify::<AudClaims>(&token, &rec.public_key_pem, Algorithm::RS256, &v).unwrap_err();
         assert!(matches!(err, CryptoError::InvalidToken(_)));
     }
 

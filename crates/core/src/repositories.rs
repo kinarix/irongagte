@@ -133,16 +133,10 @@ pub trait ClaimDefinitionRepository: Send + Sync {
         application_id: Uuid,
         key: &str,
     ) -> Result<ClaimDefinition, StoreError>;
-    async fn list_for_app(
-        &self,
-        application_id: Uuid,
-    ) -> Result<Vec<ClaimDefinition>, StoreError>;
+    async fn list_for_app(&self, application_id: Uuid) -> Result<Vec<ClaimDefinition>, StoreError>;
     /// Every claim def for every application in the tenant. Used by the global
     /// Claims management page.
-    async fn list_for_tenant(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<Vec<ClaimDefinition>, StoreError>;
+    async fn list_for_tenant(&self, tenant_id: Uuid) -> Result<Vec<ClaimDefinition>, StoreError>;
     async fn update(&self, def: ClaimDefinition) -> Result<ClaimDefinition, StoreError>;
     async fn delete(&self, id: Uuid) -> Result<(), StoreError>;
 }
@@ -162,10 +156,7 @@ pub trait GroupClaimRepository: Send + Sync {
         value: &str,
     ) -> Result<(), StoreError>;
     async fn list_for_group(&self, group_id: Uuid) -> Result<Vec<GroupClaim>, StoreError>;
-    async fn list_for_claim_def(
-        &self,
-        claim_def_id: Uuid,
-    ) -> Result<Vec<GroupClaim>, StoreError>;
+    async fn list_for_claim_def(&self, claim_def_id: Uuid) -> Result<Vec<GroupClaim>, StoreError>;
     /// Returns every group-claim row that flows into a token minted for `user`
     /// against `application`. Joins through `group_members → groups →
     /// group_claims → claim_definitions` and filters claim defs to the app.
@@ -227,21 +218,15 @@ pub trait OperatorRoleRepository: Send + Sync {
     ) -> Result<OperatorRole, StoreError>;
     /// List roles. `None` returns all roles (global + every tenant); pass a
     /// scope filter to narrow.
-    async fn list(
-        &self,
-        scope: OperatorRoleScope,
-    ) -> Result<Vec<OperatorRole>, StoreError>;
+    async fn list(&self, scope: OperatorRoleScope) -> Result<Vec<OperatorRole>, StoreError>;
     async fn update(&self, r: OperatorRole) -> Result<OperatorRole, StoreError>;
     async fn delete(&self, id: Uuid) -> Result<(), StoreError>;
     async fn assign_permission(&self, role_id: Uuid, permission_id: Uuid)
         -> Result<(), StoreError>;
-    async fn revoke_permission(&self, role_id: Uuid, permission_id: Uuid) -> Result<(), StoreError>;
+    async fn revoke_permission(&self, role_id: Uuid, permission_id: Uuid)
+        -> Result<(), StoreError>;
     async fn list_permissions(&self, role_id: Uuid) -> Result<Vec<OperatorPermission>, StoreError>;
-    async fn assign_to_operator(
-        &self,
-        operator_id: Uuid,
-        role_id: Uuid,
-    ) -> Result<(), StoreError>;
+    async fn assign_to_operator(&self, operator_id: Uuid, role_id: Uuid) -> Result<(), StoreError>;
     async fn revoke_from_operator(
         &self,
         operator_id: Uuid,
@@ -327,8 +312,10 @@ pub trait OperatorRepository: Send + Sync {
 #[async_trait]
 pub trait OperatorCredentialsRepository: Send + Sync {
     async fn create(&self, creds: OperatorCredentials) -> Result<OperatorCredentials, StoreError>;
-    async fn get_by_operator_id(&self, operator_id: Uuid)
-        -> Result<OperatorCredentials, StoreError>;
+    async fn get_by_operator_id(
+        &self,
+        operator_id: Uuid,
+    ) -> Result<OperatorCredentials, StoreError>;
     async fn update(&self, creds: OperatorCredentials) -> Result<OperatorCredentials, StoreError>;
     async fn delete(&self, operator_id: Uuid) -> Result<(), StoreError>;
 }
@@ -390,16 +377,9 @@ pub trait GroupRepository: Send + Sync {
         user_id: Uuid,
         tenant_id: Uuid,
     ) -> Result<(), StoreError>;
-    async fn list_members(
-        &self,
-        group_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<Vec<User>, StoreError>;
-    async fn list_for_user(
-        &self,
-        user_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<Vec<Group>, StoreError>;
+    async fn list_members(&self, group_id: Uuid, tenant_id: Uuid) -> Result<Vec<User>, StoreError>;
+    async fn list_for_user(&self, user_id: Uuid, tenant_id: Uuid)
+        -> Result<Vec<Group>, StoreError>;
 }
 
 // ── AuthCodeStore ─────────────────────────────────────────────────────────────
@@ -434,10 +414,7 @@ pub trait AuthCodeStore: Send + Sync {
 
 #[async_trait]
 pub trait PasskeyRepository: Send + Sync {
-    async fn create(
-        &self,
-        cred: PasskeyCredential,
-    ) -> Result<PasskeyCredential, StoreError>;
+    async fn create(&self, cred: PasskeyCredential) -> Result<PasskeyCredential, StoreError>;
     async fn get_by_credential_id(
         &self,
         credential_id: &str,

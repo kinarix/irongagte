@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::{
+    audit,
     authz_op::{require_perm, Scope},
     error::{Error, Result},
     handlers::admin_auth::AdminClaims,
@@ -77,5 +78,14 @@ pub async fn delete_session(
         .revoke_session(id)
         .await
         .map_err(|e| Error::Internal(e.to_string()))?;
+    audit::record(
+        &state,
+        &claims,
+        Some(session.tenant_id),
+        "session.revoke",
+        Some(id),
+        serde_json::json!({ "user_id": session.user_id }),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }

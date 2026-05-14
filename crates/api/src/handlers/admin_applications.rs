@@ -16,6 +16,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
+    audit,
     authz_op::{require_perm, Scope},
     error::{Error, Result},
     handlers::admin_auth::AdminClaims,
@@ -91,8 +92,18 @@ pub async fn list_applications(
     State(state): State<Arc<AppState>>,
     Query(q): Query<TenantQuery>,
 ) -> Result<Json<Value>> {
-    require_perm(&state, &claims, Scope::Tenant(q.tenant_id), APPLICATIONS, LIST).await?;
-    let items = state.applications.list(q.tenant_id, q.limit, q.offset).await?;
+    require_perm(
+        &state,
+        &claims,
+        Scope::Tenant(q.tenant_id),
+        APPLICATIONS,
+        LIST,
+    )
+    .await?;
+    let items = state
+        .applications
+        .list(q.tenant_id, q.limit, q.offset)
+        .await?;
     let data: Vec<Value> = items.iter().map(app_to_json).collect();
     Ok(Json(json!({ "applications": data, "total": data.len() })))
 }
@@ -134,6 +145,15 @@ pub async fn create_application(
         deleted_at: None,
     };
     let created = state.applications.create(app).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(created.tenant_id),
+        "application.create",
+        Some(created.id),
+        serde_json::json!({ "claim_prefix": created.claim_prefix, "client_id": created.client_id }),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(app_to_json(&created))))
 }
 
@@ -142,7 +162,14 @@ pub async fn get_application(
     State(state): State<Arc<AppState>>,
     Path((tenant_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Value>> {
-    require_perm(&state, &claims, Scope::Tenant(tenant_id), APPLICATIONS, READ).await?;
+    require_perm(
+        &state,
+        &claims,
+        Scope::Tenant(tenant_id),
+        APPLICATIONS,
+        READ,
+    )
+    .await?;
     let app = state.applications.get_by_id(id, tenant_id).await?;
     Ok(Json(app_to_json(&app)))
 }
@@ -153,7 +180,14 @@ pub async fn update_application(
     Path((tenant_id, id)): Path<(Uuid, Uuid)>,
     Json(req): Json<UpdateApplicationRequest>,
 ) -> Result<Json<Value>> {
-    require_perm(&state, &claims, Scope::Tenant(tenant_id), APPLICATIONS, UPDATE).await?;
+    require_perm(
+        &state,
+        &claims,
+        Scope::Tenant(tenant_id),
+        APPLICATIONS,
+        UPDATE,
+    )
+    .await?;
     let mut app = state.applications.get_by_id(id, tenant_id).await?;
     if let Some(name) = req.name {
         app.name = name;
@@ -179,6 +213,15 @@ pub async fn update_application(
     }
     app.updated_at = OffsetDateTime::now_utc();
     let updated = state.applications.update(app).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(updated.tenant_id),
+        "application.update",
+        Some(updated.id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(Json(app_to_json(&updated)))
 }
 
@@ -187,7 +230,23 @@ pub async fn delete_application(
     State(state): State<Arc<AppState>>,
     Path((tenant_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode> {
-    require_perm(&state, &claims, Scope::Tenant(tenant_id), APPLICATIONS, DELETE).await?;
+    require_perm(
+        &state,
+        &claims,
+        Scope::Tenant(tenant_id),
+        APPLICATIONS,
+        DELETE,
+    )
+    .await?;
     state.applications.soft_delete(id, tenant_id).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(tenant_id),
+        "application.delete",
+        Some(id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }

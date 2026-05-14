@@ -52,7 +52,9 @@ mod tests {
     #[test]
     fn verifier_is_url_safe() {
         let (v, _) = generate_pkce_pair();
-        assert!(v.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_'));
+        assert!(v
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_'));
     }
 
     #[test]

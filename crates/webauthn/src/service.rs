@@ -11,8 +11,8 @@ use url::Url;
 use uuid::Uuid;
 use webauthn_rs::prelude::{
     AuthenticationResult, CreationChallengeResponse, Passkey, PasskeyAuthentication,
-    PasskeyRegistration, PublicKeyCredential, RegisterPublicKeyCredential, RequestChallengeResponse,
-    Webauthn, WebauthnBuilder,
+    PasskeyRegistration, PublicKeyCredential, RegisterPublicKeyCredential,
+    RequestChallengeResponse, Webauthn, WebauthnBuilder,
 };
 
 pub struct WebAuthnService {
@@ -32,7 +32,10 @@ impl WebAuthnService {
             .rp_name(rp_name)
             .build()
             .map_err(|e| WebAuthnError::Internal(e.to_string()))?;
-        Ok(Self { webauthn: Arc::new(webauthn), passkeys })
+        Ok(Self {
+            webauthn: Arc::new(webauthn),
+            passkeys,
+        })
     }
 
     /// Begin passkey registration for a user. Returns the challenge to send to the browser
@@ -46,8 +49,8 @@ impl WebAuthnService {
             .webauthn
             .start_passkey_registration(user.id, &user.email, display_name, None)
             .map_err(|e| WebAuthnError::Registration(e.to_string()))?;
-        let state_json = serde_json::to_value(&reg_state)
-            .map_err(|e| WebAuthnError::Internal(e.to_string()))?;
+        let state_json =
+            serde_json::to_value(&reg_state).map_err(|e| WebAuthnError::Internal(e.to_string()))?;
         Ok((challenge, state_json))
     }
 
@@ -60,8 +63,8 @@ impl WebAuthnService {
         state_json: serde_json::Value,
         credential: &RegisterPublicKeyCredential,
     ) -> Result<PasskeyCredential, WebAuthnError> {
-        let state: PasskeyRegistration = serde_json::from_value(state_json)
-            .map_err(|_| WebAuthnError::ChallengeMismatch)?;
+        let state: PasskeyRegistration =
+            serde_json::from_value(state_json).map_err(|_| WebAuthnError::ChallengeMismatch)?;
 
         let passkey = self
             .webauthn
@@ -69,8 +72,8 @@ impl WebAuthnService {
             .map_err(|e| WebAuthnError::Registration(e.to_string()))?;
 
         let credential_id = Base64UrlUnpadded::encode_string(passkey.cred_id());
-        let passkey_json = serde_json::to_value(&passkey)
-            .map_err(|e| WebAuthnError::Internal(e.to_string()))?;
+        let passkey_json =
+            serde_json::to_value(&passkey).map_err(|e| WebAuthnError::Internal(e.to_string()))?;
 
         let now = OffsetDateTime::now_utc();
         let cred = PasskeyCredential {
@@ -85,7 +88,9 @@ impl WebAuthnService {
         };
 
         self.passkeys.create(cred).await.map_err(|e| match e {
-            StoreError::Conflict(_) => WebAuthnError::Registration("credential already registered".into()),
+            StoreError::Conflict(_) => {
+                WebAuthnError::Registration("credential already registered".into())
+            }
             other => WebAuthnError::Store(other),
         })
     }
@@ -133,8 +138,8 @@ impl WebAuthnService {
         state_json: serde_json::Value,
         credential: &PublicKeyCredential,
     ) -> Result<AuthenticationResult, WebAuthnError> {
-        let state: PasskeyAuthentication = serde_json::from_value(state_json)
-            .map_err(|_| WebAuthnError::ChallengeMismatch)?;
+        let state: PasskeyAuthentication =
+            serde_json::from_value(state_json).map_err(|_| WebAuthnError::ChallengeMismatch)?;
 
         let auth_result = self
             .webauthn
@@ -156,11 +161,14 @@ impl WebAuthnService {
 
         passkey.update_credential(&auth_result);
 
-        stored.passkey_json = serde_json::to_value(&passkey)
-            .map_err(|e| WebAuthnError::Internal(e.to_string()))?;
+        stored.passkey_json =
+            serde_json::to_value(&passkey).map_err(|e| WebAuthnError::Internal(e.to_string()))?;
         stored.last_used_at = Some(OffsetDateTime::now_utc());
 
-        self.passkeys.update(stored).await.map_err(WebAuthnError::Store)?;
+        self.passkeys
+            .update(stored)
+            .await
+            .map_err(WebAuthnError::Store)?;
 
         Ok(auth_result)
     }

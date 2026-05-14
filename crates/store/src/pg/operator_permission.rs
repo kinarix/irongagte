@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use irongate_core::{errors::StoreError, repositories::OperatorPermissionRepository, OperatorPermission};
+use irongate_core::{
+    errors::StoreError, repositories::OperatorPermissionRepository, OperatorPermission,
+};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -9,7 +11,9 @@ pub struct PgOperatorPermissionRepo {
     pub(crate) pool: PgPool,
 }
 
-fn row_to_operator_permission(row: &sqlx::postgres::PgRow) -> Result<OperatorPermission, StoreError> {
+fn row_to_operator_permission(
+    row: &sqlx::postgres::PgRow,
+) -> Result<OperatorPermission, StoreError> {
     Ok(OperatorPermission {
         id: row.try_get("id").map_err(map_row_err)?,
         resource: row.try_get("resource").map_err(map_row_err)?,
@@ -47,12 +51,11 @@ impl OperatorPermissionRepository for PgOperatorPermissionRepo {
     }
 
     async fn get_by_id(&self, id: Uuid) -> Result<OperatorPermission, StoreError> {
-        let row =
-            sqlx::query("SELECT * FROM operator_permissions WHERE id = $1")
-                .bind(id)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(map_db_err)?;
+        let row = sqlx::query("SELECT * FROM operator_permissions WHERE id = $1")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(map_db_err)?;
         row_to_operator_permission(&row)
     }
 
@@ -61,14 +64,13 @@ impl OperatorPermissionRepository for PgOperatorPermissionRepo {
         resource: &str,
         action: &str,
     ) -> Result<OperatorPermission, StoreError> {
-        let row = sqlx::query(
-            "SELECT * FROM operator_permissions WHERE resource = $1 AND action = $2",
-        )
-        .bind(resource)
-        .bind(action)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(map_db_err)?;
+        let row =
+            sqlx::query("SELECT * FROM operator_permissions WHERE resource = $1 AND action = $2")
+                .bind(resource)
+                .bind(action)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(map_db_err)?;
         row_to_operator_permission(&row)
     }
 }

@@ -211,7 +211,10 @@ impl ScimUser {
 
         let mut photos = vec![];
         if let Some(url) = &user.picture_url {
-            photos.push(ScimPhoto { value: url.clone(), photo_type: "photo".into() });
+            photos.push(ScimPhoto {
+                value: url.clone(),
+                photo_type: "photo".into(),
+            });
         }
 
         ScimUser {

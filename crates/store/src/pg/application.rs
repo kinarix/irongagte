@@ -11,7 +11,9 @@ pub struct PgApplicationRepo {
 
 fn row_to_application(row: &sqlx::postgres::PgRow) -> Result<Application, StoreError> {
     let app_type_str: String = row.try_get("app_type").map_err(map_row_err)?;
-    let app_type: AppType = app_type_str.parse().map_err(|_| map_parse_err("app_type"))?;
+    let app_type: AppType = app_type_str
+        .parse()
+        .map_err(|_| map_parse_err("app_type"))?;
 
     let redirect_uris_json: String = row.try_get("redirect_uris").map_err(map_row_err)?;
     let redirect_uris: Vec<String> =
@@ -47,12 +49,12 @@ fn row_to_application(row: &sqlx::postgres::PgRow) -> Result<Application, StoreE
 #[async_trait]
 impl irongate_core::repositories::ApplicationRepository for PgApplicationRepo {
     async fn create(&self, app: Application) -> Result<Application, StoreError> {
-        let redirect_uris = serde_json::to_string(&app.redirect_uris)
-            .map_err(map_json_err("redirect_uris"))?;
-        let allowed_scopes = serde_json::to_string(&app.allowed_scopes)
-            .map_err(map_json_err("allowed_scopes"))?;
-        let grant_types = serde_json::to_string(&app.grant_types)
-            .map_err(map_json_err("grant_types"))?;
+        let redirect_uris =
+            serde_json::to_string(&app.redirect_uris).map_err(map_json_err("redirect_uris"))?;
+        let allowed_scopes =
+            serde_json::to_string(&app.allowed_scopes).map_err(map_json_err("allowed_scopes"))?;
+        let grant_types =
+            serde_json::to_string(&app.grant_types).map_err(map_json_err("grant_types"))?;
 
         let row = sqlx::query(
             "INSERT INTO applications
@@ -113,12 +115,12 @@ impl irongate_core::repositories::ApplicationRepository for PgApplicationRepo {
     }
 
     async fn update(&self, app: Application) -> Result<Application, StoreError> {
-        let redirect_uris = serde_json::to_string(&app.redirect_uris)
-            .map_err(map_json_err("redirect_uris"))?;
-        let allowed_scopes = serde_json::to_string(&app.allowed_scopes)
-            .map_err(map_json_err("allowed_scopes"))?;
-        let grant_types = serde_json::to_string(&app.grant_types)
-            .map_err(map_json_err("grant_types"))?;
+        let redirect_uris =
+            serde_json::to_string(&app.redirect_uris).map_err(map_json_err("redirect_uris"))?;
+        let allowed_scopes =
+            serde_json::to_string(&app.allowed_scopes).map_err(map_json_err("allowed_scopes"))?;
+        let grant_types =
+            serde_json::to_string(&app.grant_types).map_err(map_json_err("grant_types"))?;
 
         let row = sqlx::query(
             "UPDATE applications

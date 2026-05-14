@@ -20,7 +20,7 @@ pub fn resolve_scopes(scopes: &[String]) -> Vec<(String, String)> {
 /// A scope `"resource:*"` grants all actions on that resource.
 /// A scope `"*:*"` grants all actions on all resources.
 pub fn scopes_grant(scopes: &[String], resource: &str, action: &str) -> bool {
-    resolve_scopes(scopes).into_iter().any(|(r, a)| {
-        (r == resource || r == "*") && (a == action || a == "*")
-    })
+    resolve_scopes(scopes)
+        .into_iter()
+        .any(|(r, a)| (r == resource || r == "*") && (a == action || a == "*"))
 }

@@ -156,12 +156,19 @@ async fn list_users_empty() {
     );
 
     let resp = app
-        .oneshot(Request::builder().uri("/scim/v2/Users").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/scim/v2/Users")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["totalResults"], 0);
     assert_eq!(json["Resources"].as_array().unwrap().len(), 0);
@@ -187,12 +194,19 @@ async fn list_users_returns_resources() {
     );
 
     let resp = app
-        .oneshot(Request::builder().uri("/scim/v2/Users").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/scim/v2/Users")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["totalResults"], 1);
     assert_eq!(json["Resources"][0]["userName"], "alice@example.com");
@@ -266,7 +280,9 @@ async fn create_user_returns_201() {
         .unwrap();
 
     assert_eq!(resp.status(), StatusCode::CREATED);
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(json["userName"], "alice@example.com");
     assert!(json["active"].as_bool().unwrap());
@@ -345,12 +361,19 @@ async fn list_groups_empty() {
     );
 
     let resp = app
-        .oneshot(Request::builder().uri("/scim/v2/Groups").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/scim/v2/Groups")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["totalResults"], 0);
 }
@@ -396,7 +419,9 @@ async fn create_group_returns_201() {
         .unwrap();
 
     assert_eq!(resp.status(), StatusCode::CREATED);
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(json["displayName"], "Engineering");
 }
@@ -467,7 +492,9 @@ async fn get_group_with_members() {
         .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["displayName"], "Engineering");
     assert_eq!(json["members"].as_array().unwrap().len(), 1);
@@ -520,7 +547,9 @@ async fn patch_user_active_field() {
         .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert!(json["active"].as_bool().unwrap());
 }

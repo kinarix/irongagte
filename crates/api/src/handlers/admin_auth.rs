@@ -37,14 +37,10 @@ impl FromRequestParts<Arc<AppState>> for AdminClaims {
         let mut validation = Validation::new(algo);
         validation.set_audience(&[OPERATOR_AUDIENCE]);
 
-        let claims = verify::<OperatorClaims>(
-            token,
-            &state.signing_key.public_key_pem,
-            algo,
-            &validation,
-        )
-        .map_err(|_| Error::Unauthorized("invalid or expired token".into()))?
-        .claims;
+        let claims =
+            verify::<OperatorClaims>(token, &state.signing_key.public_key_pem, algo, &validation)
+                .map_err(|_| Error::Unauthorized("invalid or expired token".into()))?
+                .claims;
 
         if claims.actor_type != OPERATOR_ACTOR_TYPE {
             return Err(Error::Forbidden);

@@ -79,7 +79,11 @@ fn make_service(
     group_claims: MockGroupClaimRepo,
     user_claims: MockUserClaimRepo,
 ) -> AuthzService {
-    AuthzService::new(Arc::new(defs), Arc::new(group_claims), Arc::new(user_claims))
+    AuthzService::new(
+        Arc::new(defs),
+        Arc::new(group_claims),
+        Arc::new(user_claims),
+    )
 }
 
 fn make_policy(
@@ -129,39 +133,43 @@ async fn resolve_claims_merges_multi_across_groups_and_user() {
         .returning(move |_| Ok(vec![def_clone.clone()]));
 
     let mut group_claims = MockGroupClaimRepo::new();
-    group_claims.expect_list_for_user_in_app().returning(move |_, _| {
-        let now = OffsetDateTime::now_utc();
-        Ok(vec![
-            ResolvedGroupClaim {
-                claim_def_id: def_id,
-                claim_key: "roles".into(),
-                claim_type: ClaimType::Multi,
-                group_id: Uuid::new_v4(),
-                group_priority: 5,
-                group_created_at: now,
-                value: "admin".into(),
-            },
-            ResolvedGroupClaim {
-                claim_def_id: def_id,
-                claim_key: "roles".into(),
-                claim_type: ClaimType::Multi,
-                group_id: Uuid::new_v4(),
-                group_priority: 1,
-                group_created_at: now,
-                value: "viewer".into(),
-            },
-        ])
-    });
+    group_claims
+        .expect_list_for_user_in_app()
+        .returning(move |_, _| {
+            let now = OffsetDateTime::now_utc();
+            Ok(vec![
+                ResolvedGroupClaim {
+                    claim_def_id: def_id,
+                    claim_key: "roles".into(),
+                    claim_type: ClaimType::Multi,
+                    group_id: Uuid::new_v4(),
+                    group_priority: 5,
+                    group_created_at: now,
+                    value: "admin".into(),
+                },
+                ResolvedGroupClaim {
+                    claim_def_id: def_id,
+                    claim_key: "roles".into(),
+                    claim_type: ClaimType::Multi,
+                    group_id: Uuid::new_v4(),
+                    group_priority: 1,
+                    group_created_at: now,
+                    value: "viewer".into(),
+                },
+            ])
+        });
 
     let mut user_claims = MockUserClaimRepo::new();
-    user_claims.expect_list_for_user_in_app().returning(move |_, _| {
-        Ok(vec![ResolvedUserClaim {
-            claim_def_id: def_id,
-            claim_key: "roles".into(),
-            claim_type: ClaimType::Multi,
-            value: "owner".into(),
-        }])
-    });
+    user_claims
+        .expect_list_for_user_in_app()
+        .returning(move |_, _| {
+            Ok(vec![ResolvedUserClaim {
+                claim_def_id: def_id,
+                claim_key: "roles".into(),
+                claim_type: ClaimType::Multi,
+                value: "owner".into(),
+            }])
+        });
 
     let svc = make_service(defs, group_claims, user_claims);
     let out = svc
@@ -190,27 +198,31 @@ async fn resolve_claims_scalar_user_direct_overrides_groups() {
         .returning(move |_| Ok(vec![def_clone.clone()]));
 
     let mut group_claims = MockGroupClaimRepo::new();
-    group_claims.expect_list_for_user_in_app().returning(move |_, _| {
-        Ok(vec![ResolvedGroupClaim {
-            claim_def_id: def_id,
-            claim_key: "plan".into(),
-            claim_type: ClaimType::Scalar,
-            group_id: Uuid::new_v4(),
-            group_priority: 10,
-            group_created_at: OffsetDateTime::now_utc(),
-            value: "free".into(),
-        }])
-    });
+    group_claims
+        .expect_list_for_user_in_app()
+        .returning(move |_, _| {
+            Ok(vec![ResolvedGroupClaim {
+                claim_def_id: def_id,
+                claim_key: "plan".into(),
+                claim_type: ClaimType::Scalar,
+                group_id: Uuid::new_v4(),
+                group_priority: 10,
+                group_created_at: OffsetDateTime::now_utc(),
+                value: "free".into(),
+            }])
+        });
 
     let mut user_claims = MockUserClaimRepo::new();
-    user_claims.expect_list_for_user_in_app().returning(move |_, _| {
-        Ok(vec![ResolvedUserClaim {
-            claim_def_id: def_id,
-            claim_key: "plan".into(),
-            claim_type: ClaimType::Scalar,
-            value: "enterprise".into(),
-        }])
-    });
+    user_claims
+        .expect_list_for_user_in_app()
+        .returning(move |_, _| {
+            Ok(vec![ResolvedUserClaim {
+                claim_def_id: def_id,
+                claim_key: "plan".into(),
+                claim_type: ClaimType::Scalar,
+                value: "enterprise".into(),
+            }])
+        });
 
     let svc = make_service(defs, group_claims, user_claims);
     let out = svc
@@ -231,28 +243,30 @@ async fn resolve_claims_scalar_highest_priority_group_wins() {
 
     // Repo returns rows already ordered by priority DESC, created_at ASC.
     let mut group_claims = MockGroupClaimRepo::new();
-    group_claims.expect_list_for_user_in_app().returning(move |_, _| {
-        Ok(vec![
-            ResolvedGroupClaim {
-                claim_def_id: def_id,
-                claim_key: "plan".into(),
-                claim_type: ClaimType::Scalar,
-                group_id: Uuid::new_v4(),
-                group_priority: 100,
-                group_created_at: OffsetDateTime::now_utc(),
-                value: "enterprise".into(),
-            },
-            ResolvedGroupClaim {
-                claim_def_id: def_id,
-                claim_key: "plan".into(),
-                claim_type: ClaimType::Scalar,
-                group_id: Uuid::new_v4(),
-                group_priority: 5,
-                group_created_at: OffsetDateTime::now_utc(),
-                value: "free".into(),
-            },
-        ])
-    });
+    group_claims
+        .expect_list_for_user_in_app()
+        .returning(move |_, _| {
+            Ok(vec![
+                ResolvedGroupClaim {
+                    claim_def_id: def_id,
+                    claim_key: "plan".into(),
+                    claim_type: ClaimType::Scalar,
+                    group_id: Uuid::new_v4(),
+                    group_priority: 100,
+                    group_created_at: OffsetDateTime::now_utc(),
+                    value: "enterprise".into(),
+                },
+                ResolvedGroupClaim {
+                    claim_def_id: def_id,
+                    claim_key: "plan".into(),
+                    claim_type: ClaimType::Scalar,
+                    group_id: Uuid::new_v4(),
+                    group_priority: 5,
+                    group_created_at: OffsetDateTime::now_utc(),
+                    value: "free".into(),
+                },
+            ])
+        });
 
     let mut user_claims = MockUserClaimRepo::new();
     user_claims

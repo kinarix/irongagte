@@ -81,14 +81,13 @@ impl irongate_core::repositories::MagicLinkRepository for PgMagicLinkRepo {
 
     async fn delete_expired(&self, tenant_id: Uuid) -> Result<u64, StoreError> {
         let now = time::OffsetDateTime::now_utc();
-        let result = sqlx::query(
-            "DELETE FROM magic_links WHERE tenant_id = $1 AND expires_at < $2",
-        )
-        .bind(tenant_id)
-        .bind(now)
-        .execute(&self.pool)
-        .await
-        .map_err(map_db_err)?;
+        let result =
+            sqlx::query("DELETE FROM magic_links WHERE tenant_id = $1 AND expires_at < $2")
+                .bind(tenant_id)
+                .bind(now)
+                .execute(&self.pool)
+                .await
+                .map_err(map_db_err)?;
         Ok(result.rows_affected())
     }
 }

@@ -1,17 +1,13 @@
 use std::sync::Arc;
 
-use axum::{
-    extract::State,
-    http::HeaderMap,
-    Form, Json,
-};
+use axum::{extract::State, http::HeaderMap, Form, Json};
+use base64ct::{Base64UrlUnpadded, Encoding};
 use irongate_core::types::{Application, User};
 use irongate_crypto::{jwt::sign, token::hash_token};
-use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use base64ct::{Base64UrlUnpadded, Encoding};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
@@ -50,7 +46,9 @@ pub async fn token(
             refresh_token_grant(state, tenant_id, req).await
         }
         "authorization_code" => auth_code_grant(state, req).await,
-        other => Err(Error::BadRequest(format!("unsupported grant_type: {other}"))),
+        other => Err(Error::BadRequest(format!(
+            "unsupported grant_type: {other}"
+        ))),
     }
 }
 
@@ -59,10 +57,15 @@ async fn password_grant(
     tenant_id: Uuid,
     req: TokenRequest,
 ) -> Result<Json<Value>> {
-    let username = req.username.ok_or_else(|| Error::BadRequest("username required".into()))?;
-    let password = req.password.ok_or_else(|| Error::BadRequest("password required".into()))?;
-    let client_id =
-        req.client_id.ok_or_else(|| Error::BadRequest("client_id required".into()))?;
+    let username = req
+        .username
+        .ok_or_else(|| Error::BadRequest("username required".into()))?;
+    let password = req
+        .password
+        .ok_or_else(|| Error::BadRequest("password required".into()))?;
+    let client_id = req
+        .client_id
+        .ok_or_else(|| Error::BadRequest("client_id required".into()))?;
 
     let app = state
         .applications
@@ -70,7 +73,10 @@ async fn password_grant(
         .await
         .map_err(|_| Error::Unauthorized("unknown client".into()))?;
 
-    let user = state.password_svc.authenticate(&username, &password, tenant_id).await?;
+    let user = state
+        .password_svc
+        .authenticate(&username, &password, tenant_id)
+        .await?;
 
     let scope = req.scope.unwrap_or_else(|| "openid profile email".into());
 
@@ -118,8 +124,9 @@ async fn refresh_token_grant(
     tenant_id: Uuid,
     req: TokenRequest,
 ) -> Result<Json<Value>> {
-    let raw_token =
-        req.refresh_token.ok_or_else(|| Error::BadRequest("refresh_token required".into()))?;
+    let raw_token = req
+        .refresh_token
+        .ok_or_else(|| Error::BadRequest("refresh_token required".into()))?;
 
     let hash = hash_token(&raw_token);
     let old_rt = state
@@ -129,7 +136,9 @@ async fn refresh_token_grant(
         .map_err(|_| Error::Unauthorized("invalid refresh token".into()))?;
 
     if old_rt.revoked_at.is_some() || old_rt.expires_at < time::OffsetDateTime::now_utc() {
-        return Err(Error::Unauthorized("refresh token expired or revoked".into()));
+        return Err(Error::Unauthorized(
+            "refresh token expired or revoked".into(),
+        ));
     }
 
     let scope = old_rt.scope.clone();
@@ -163,17 +172,19 @@ async fn refresh_token_grant(
     })))
 }
 
-async fn auth_code_grant(
-    state: Arc<AppState>,
-    req: TokenRequest,
-) -> Result<Json<Value>> {
-    let code = req.code.ok_or_else(|| Error::BadRequest("code required".into()))?;
-    let redirect_uri =
-        req.redirect_uri.ok_or_else(|| Error::BadRequest("redirect_uri required".into()))?;
-    let code_verifier =
-        req.code_verifier.ok_or_else(|| Error::BadRequest("code_verifier required".into()))?;
-    let client_id =
-        req.client_id.ok_or_else(|| Error::BadRequest("client_id required".into()))?;
+async fn auth_code_grant(state: Arc<AppState>, req: TokenRequest) -> Result<Json<Value>> {
+    let code = req
+        .code
+        .ok_or_else(|| Error::BadRequest("code required".into()))?;
+    let redirect_uri = req
+        .redirect_uri
+        .ok_or_else(|| Error::BadRequest("redirect_uri required".into()))?;
+    let code_verifier = req
+        .code_verifier
+        .ok_or_else(|| Error::BadRequest("code_verifier required".into()))?;
+    let client_id = req
+        .client_id
+        .ok_or_else(|| Error::BadRequest("client_id required".into()))?;
 
     // Retrieve-and-delete the auth code (one-time use).
     let data = state
@@ -270,8 +281,13 @@ async fn mint_access_token(
         extras,
     };
     let alg = algo_for_key(&state.signing_key.algorithm);
-    sign(&claims, &state.signing_key.private_key_pem, alg, Some(&state.signing_key.id.to_string()))
-        .map_err(|e| Error::Internal(e.to_string()))
+    sign(
+        &claims,
+        &state.signing_key.private_key_pem,
+        alg,
+        Some(&state.signing_key.id.to_string()),
+    )
+    .map_err(|e| Error::Internal(e.to_string()))
 }
 
 /// Resolve every custom claim for `user` against `app`. Returns a flat map
@@ -309,8 +325,13 @@ fn mint_id_token(
         tenant_id: tenant_id.to_string(),
     };
     let alg = algo_for_key(&state.signing_key.algorithm);
-    sign(&claims, &state.signing_key.private_key_pem, alg, Some(&state.signing_key.id.to_string()))
-        .map_err(|e| Error::Internal(e.to_string()))
+    sign(
+        &claims,
+        &state.signing_key.private_key_pem,
+        alg,
+        Some(&state.signing_key.id.to_string()),
+    )
+    .map_err(|e| Error::Internal(e.to_string()))
 }
 
 fn extract_tenant_id(headers: &HeaderMap) -> Result<Uuid> {

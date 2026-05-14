@@ -54,7 +54,10 @@ impl PasswordService {
                 other => AuthError::Store(other),
             })?;
 
-        let hash = creds.password_hash.as_deref().ok_or(AuthError::InvalidCredentials)?;
+        let hash = creds
+            .password_hash
+            .as_deref()
+            .ok_or(AuthError::InvalidCredentials)?;
 
         let valid = verify_password(password, hash)
             .map_err(|_| AuthError::Internal("password verify failed".into()))?;
@@ -97,7 +100,10 @@ impl PasswordService {
                     created_at: now,
                     updated_at: now,
                 };
-                self.credentials.create(creds).await.map_err(AuthError::Store)?;
+                self.credentials
+                    .create(creds)
+                    .await
+                    .map_err(AuthError::Store)?;
             }
             Err(e) => return Err(AuthError::Store(e)),
         }

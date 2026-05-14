@@ -25,8 +25,7 @@ fn row_to_audit_event(row: &sqlx::postgres::PgRow) -> Result<AuditEvent, StoreEr
 #[async_trait]
 impl irongate_core::repositories::AuditRepository for PgAuditRepo {
     async fn record(&self, event: AuditEvent) -> Result<(), StoreError> {
-        let metadata =
-            serde_json::to_string(&event.metadata).unwrap_or_else(|_| "{}".into());
+        let metadata = serde_json::to_string(&event.metadata).unwrap_or_else(|_| "{}".into());
         sqlx::query(
             "INSERT INTO audit_events
              (id, tenant_id, event_type, actor_id, target_id, ip_address, metadata, created_at)

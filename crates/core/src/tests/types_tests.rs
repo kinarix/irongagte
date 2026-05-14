@@ -304,7 +304,7 @@ fn idp_config_roundtrip_serde() {
 fn audit_event_roundtrip_serde() {
     let event = AuditEvent {
         id: Uuid::new_v4(),
-        tenant_id: Uuid::new_v4(),
+        tenant_id: Some(Uuid::new_v4()),
         event_type: "user.login".into(),
         actor_id: Some(Uuid::new_v4()),
         target_id: None,
@@ -421,7 +421,12 @@ fn refresh_token_with_rotation_chain() {
 
 #[test]
 fn idp_type_roundtrip_serde() {
-    for idp_type in [IdpType::Local, IdpType::Oidc, IdpType::Oauth2, IdpType::Ldap] {
+    for idp_type in [
+        IdpType::Local,
+        IdpType::Oidc,
+        IdpType::Oauth2,
+        IdpType::Ldap,
+    ] {
         let json = serde_json::to_string(&idp_type).unwrap();
         let back: IdpType = serde_json::from_str(&json).unwrap();
         assert_eq!(

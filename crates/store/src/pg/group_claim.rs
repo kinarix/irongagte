@@ -25,8 +25,8 @@ fn row_to_group_claim(row: &sqlx::postgres::PgRow) -> Result<GroupClaim, StoreEr
 
 fn row_to_resolved(row: &sqlx::postgres::PgRow) -> Result<ResolvedGroupClaim, StoreError> {
     let claim_type_str: String = row.try_get("claim_type").map_err(map_row_err)?;
-    let claim_type = ClaimType::from_str(&claim_type_str)
-        .map_err(|_| map_parse_err("claim_type"))?;
+    let claim_type =
+        ClaimType::from_str(&claim_type_str).map_err(|_| map_parse_err("claim_type"))?;
     Ok(ResolvedGroupClaim {
         claim_def_id: row.try_get("claim_def_id").map_err(map_row_err)?,
         claim_key: row.try_get("claim_key").map_err(map_row_err)?,
@@ -92,10 +92,7 @@ impl irongate_core::repositories::GroupClaimRepository for PgGroupClaimRepo {
         rows.iter().map(row_to_group_claim).collect()
     }
 
-    async fn list_for_claim_def(
-        &self,
-        claim_def_id: Uuid,
-    ) -> Result<Vec<GroupClaim>, StoreError> {
+    async fn list_for_claim_def(&self, claim_def_id: Uuid) -> Result<Vec<GroupClaim>, StoreError> {
         let rows = sqlx::query(
             "SELECT * FROM group_claims WHERE claim_def_id = $1 ORDER BY group_id, value",
         )

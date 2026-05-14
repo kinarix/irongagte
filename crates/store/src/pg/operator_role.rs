@@ -24,7 +24,9 @@ fn row_to_operator_role(row: &sqlx::postgres::PgRow) -> Result<OperatorRole, Sto
     })
 }
 
-fn row_to_operator_permission(row: &sqlx::postgres::PgRow) -> Result<OperatorPermission, StoreError> {
+fn row_to_operator_permission(
+    row: &sqlx::postgres::PgRow,
+) -> Result<OperatorPermission, StoreError> {
     Ok(OperatorPermission {
         id: row.try_get("id").map_err(map_row_err)?,
         resource: row.try_get("resource").map_err(map_row_err)?,
@@ -69,28 +71,25 @@ impl OperatorRoleRepository for PgOperatorRoleRepo {
         tenant_id: Option<Uuid>,
     ) -> Result<OperatorRole, StoreError> {
         let row = match tenant_id {
-            None => sqlx::query(
-                "SELECT * FROM operator_roles WHERE name = $1 AND tenant_id IS NULL",
-            )
-            .bind(name)
-            .fetch_one(&self.pool)
-            .await,
-            Some(tid) => sqlx::query(
-                "SELECT * FROM operator_roles WHERE name = $1 AND tenant_id = $2",
-            )
-            .bind(name)
-            .bind(tid)
-            .fetch_one(&self.pool)
-            .await,
+            None => {
+                sqlx::query("SELECT * FROM operator_roles WHERE name = $1 AND tenant_id IS NULL")
+                    .bind(name)
+                    .fetch_one(&self.pool)
+                    .await
+            }
+            Some(tid) => {
+                sqlx::query("SELECT * FROM operator_roles WHERE name = $1 AND tenant_id = $2")
+                    .bind(name)
+                    .bind(tid)
+                    .fetch_one(&self.pool)
+                    .await
+            }
         }
         .map_err(map_db_err)?;
         row_to_operator_role(&row)
     }
 
-    async fn list(
-        &self,
-        scope: OperatorRoleScope,
-    ) -> Result<Vec<OperatorRole>, StoreError> {
+    async fn list(&self, scope: OperatorRoleScope) -> Result<Vec<OperatorRole>, StoreError> {
         let rows = match scope {
             OperatorRoleScope::All => {
                 sqlx::query("SELECT * FROM operator_roles ORDER BY tenant_id NULLS FIRST, name")
@@ -102,12 +101,12 @@ impl OperatorRoleRepository for PgOperatorRoleRepo {
                     .fetch_all(&self.pool)
                     .await
             }
-            OperatorRoleScope::Tenant(tid) => sqlx::query(
-                "SELECT * FROM operator_roles WHERE tenant_id = $1 ORDER BY name",
-            )
-            .bind(tid)
-            .fetch_all(&self.pool)
-            .await,
+            OperatorRoleScope::Tenant(tid) => {
+                sqlx::query("SELECT * FROM operator_roles WHERE tenant_id = $1 ORDER BY name")
+                    .bind(tid)
+                    .fetch_all(&self.pool)
+                    .await
+            }
         }
         .map_err(map_db_err)?;
         rows.iter().map(row_to_operator_role).collect()
@@ -188,11 +187,7 @@ impl OperatorRoleRepository for PgOperatorRoleRepo {
         rows.iter().map(row_to_operator_permission).collect()
     }
 
-    async fn assign_to_operator(
-        &self,
-        operator_id: Uuid,
-        role_id: Uuid,
-    ) -> Result<(), StoreError> {
+    async fn assign_to_operator(&self, operator_id: Uuid, role_id: Uuid) -> Result<(), StoreError> {
         sqlx::query(
             "INSERT INTO operator_role_assignments (operator_id, operator_role_id, assigned_at)
              VALUES ($1, $2, $3)

@@ -15,10 +15,7 @@ pub struct MagicLinkService {
 }
 
 impl MagicLinkService {
-    pub fn new(
-        users: Arc<dyn UserRepository>,
-        magic_links: Arc<dyn MagicLinkRepository>,
-    ) -> Self {
+    pub fn new(users: Arc<dyn UserRepository>, magic_links: Arc<dyn MagicLinkRepository>) -> Self {
         Self { users, magic_links }
     }
 
@@ -58,17 +55,17 @@ impl MagicLinkService {
             used_at: None,
             created_at: now,
         };
-        let link = self.magic_links.create(link).await.map_err(AuthError::Store)?;
+        let link = self
+            .magic_links
+            .create(link)
+            .await
+            .map_err(AuthError::Store)?;
 
         Ok((raw_token, link))
     }
 
     /// Consume a magic link token and return the authenticated user.
-    pub async fn consume_link(
-        &self,
-        raw_token: &str,
-        tenant_id: Uuid,
-    ) -> Result<User, AuthError> {
+    pub async fn consume_link(&self, raw_token: &str, tenant_id: Uuid) -> Result<User, AuthError> {
         let token_hash = hash_token(raw_token);
 
         let link = self
@@ -84,10 +81,13 @@ impl MagicLinkService {
             return Err(AuthError::TokenExpired);
         }
 
-        self.magic_links.mark_used(link.id).await.map_err(|e| match e {
-            StoreError::NotFound(_) => AuthError::TokenAlreadyUsed,
-            other => AuthError::Store(other),
-        })?;
+        self.magic_links
+            .mark_used(link.id)
+            .await
+            .map_err(|e| match e {
+                StoreError::NotFound(_) => AuthError::TokenAlreadyUsed,
+                other => AuthError::Store(other),
+            })?;
 
         let user = self
             .users

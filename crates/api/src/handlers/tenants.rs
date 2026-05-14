@@ -11,10 +11,7 @@ use serde_json::{json, Value};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::{
-    error::Result,
-    state::AppState,
-};
+use crate::{error::Result, state::AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateTenantRequest {

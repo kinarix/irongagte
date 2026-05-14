@@ -16,6 +16,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
+    audit,
     authz_op::{require_perm, Scope},
     error::{Error, Result},
     handlers::admin_auth::AdminClaims,
@@ -113,6 +114,15 @@ pub async fn create_user(
         deleted_at: None,
     };
     let created = state.users.create(user).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(created.tenant_id),
+        "user.create",
+        Some(created.id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(user_to_json(&created))))
 }
 
@@ -159,6 +169,15 @@ pub async fn update_user(
     }
     user.updated_at = OffsetDateTime::now_utc();
     let updated = state.users.update(user).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(updated.tenant_id),
+        "user.update",
+        Some(updated.id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(Json(user_to_json(&updated)))
 }
 
@@ -169,6 +188,15 @@ pub async fn delete_user(
 ) -> Result<StatusCode> {
     require_perm(&state, &claims, Scope::Tenant(tenant_id), USERS, DELETE).await?;
     state.users.soft_delete(id, tenant_id).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(tenant_id),
+        "user.delete",
+        Some(id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -182,6 +210,15 @@ pub async fn suspend_user(
     user.status = UserStatus::Suspended;
     user.updated_at = OffsetDateTime::now_utc();
     let updated = state.users.update(user).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(tenant_id),
+        "user.suspend",
+        Some(id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(Json(user_to_json(&updated)))
 }
 
@@ -195,6 +232,133 @@ pub async fn unsuspend_user(
     user.status = UserStatus::Active;
     user.updated_at = OffsetDateTime::now_utc();
     let updated = state.users.update(user).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(tenant_id),
+        "user.unsuspend",
+        Some(id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(Json(user_to_json(&updated)))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct BulkUserRow {
+    pub email: String,
+    pub name: Option<String>,
+    pub given_name: Option<String>,
+    pub family_name: Option<String>,
+    #[serde(default)]
+    pub attributes: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BulkImportRequest {
+    pub users: Vec<BulkUserRow>,
+    /// If `Some`, every successfully-imported user is added to this group and
+    /// inherits its claim assignments at token mint time.
+    #[serde(default)]
+    pub group_id: Option<Uuid>,
+    /// If true, duplicate-email conflicts are skipped rather than aborting the
+    /// batch. Other store errors still abort the affected row only.
+    #[serde(default)]
+    pub skip_duplicates: bool,
+}
+
+/// Bulk-create users for a tenant. Each row reuses the same shape as the
+/// single-user create. Per-row failures are collected and returned alongside
+/// the success count so the caller can surface them. The optional `group_id`
+/// gives imported users the group's claims automatically — the claim
+/// resolution engine reads `group_members` joined to `group_claims` at mint
+/// time, so no per-claim work is needed here.
+pub async fn bulk_create_users(
+    AdminClaims(claims): AdminClaims,
+    State(state): State<Arc<AppState>>,
+    Path(tenant_id): Path<Uuid>,
+    Json(req): Json<BulkImportRequest>,
+) -> Result<Json<Value>> {
+    use irongate_core::errors::StoreError;
+    require_perm(&state, &claims, Scope::Tenant(tenant_id), USERS, CREATE).await?;
+
+    let mut created_count = 0_usize;
+    let mut skipped = 0_usize;
+    let mut errors: Vec<Value> = Vec::new();
+    let total = req.users.len();
+
+    for (idx, row) in req.users.into_iter().enumerate() {
+        let attributes = row.attributes.unwrap_or(serde_json::json!({}));
+        if !attributes.is_object() {
+            errors.push(json!({
+                "index": idx,
+                "email": row.email,
+                "error": "attributes must be a JSON object",
+            }));
+            continue;
+        }
+        let now = OffsetDateTime::now_utc();
+        let user = User {
+            id: Uuid::new_v4(),
+            tenant_id,
+            email: row.email.clone(),
+            email_verified: false,
+            name: row.name,
+            given_name: row.given_name,
+            family_name: row.family_name,
+            picture_url: None,
+            status: UserStatus::Pending,
+            attributes,
+            created_at: now,
+            updated_at: now,
+            last_login_at: None,
+            deleted_at: None,
+        };
+        match state.users.create(user).await {
+            Ok(u) => {
+                if let Some(group_id) = req.group_id {
+                    if let Err(e) = state.groups.add_member(group_id, u.id, tenant_id).await {
+                        errors.push(json!({
+                            "index": idx,
+                            "email": row.email,
+                            "error": format!("user created but group add failed: {e}"),
+                        }));
+                    }
+                }
+                created_count += 1;
+            }
+            Err(StoreError::Conflict(_)) if req.skip_duplicates => {
+                skipped += 1;
+            }
+            Err(e) => {
+                errors.push(json!({
+                    "index": idx,
+                    "email": row.email,
+                    "error": e.to_string(),
+                }));
+            }
+        }
+    }
+
+    audit::record(
+        &state,
+        &claims,
+        Some(tenant_id),
+        "users.bulk_import",
+        None,
+        json!({
+            "total": total,
+            "created": created_count,
+            "skipped": skipped,
+            "errored": errors.len(),
+            "group_id": req.group_id,
+        }),
+    )
+    .await;
+
+    Ok(Json(json!({
+        "created": created_count,
+        "skipped": skipped,
+        "errors": errors,
+    })))
+}

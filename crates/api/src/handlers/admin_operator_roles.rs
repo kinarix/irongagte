@@ -9,7 +9,7 @@ use irongate_core::{
     repositories::OperatorRoleScope,
     types::{
         op_action::{ASSIGN, CREATE, DELETE, LIST, READ, REVOKE, UPDATE},
-        op_resource::{OPERATOR_ROLES, OPERATORS},
+        op_resource::{OPERATORS, OPERATOR_ROLES},
         OperatorPermission, OperatorRole,
     },
 };
@@ -19,6 +19,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
+    audit,
     authz_op::{require_perm, scope_of, Scope},
     error::Result,
     handlers::admin_auth::AdminClaims,
@@ -118,6 +119,15 @@ pub async fn create_operator_role(
         updated_at: now,
     };
     let created = state.operator_roles_repo.create(role).await?;
+    audit::record(
+        &state,
+        &claims,
+        created.tenant_id,
+        "operator_role.create",
+        Some(created.id),
+        serde_json::json!({ "name": created.name }),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(role_to_json(&created))))
 }
 
@@ -162,6 +172,15 @@ pub async fn update_operator_role(
     }
     role.updated_at = OffsetDateTime::now_utc();
     let updated = state.operator_roles_repo.update(role).await?;
+    audit::record(
+        &state,
+        &claims,
+        updated.tenant_id,
+        "operator_role.update",
+        Some(updated.id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(Json(role_to_json(&updated)))
 }
 
@@ -180,6 +199,15 @@ pub async fn delete_operator_role(
     )
     .await?;
     state.operator_roles_repo.delete(id).await?;
+    audit::record(
+        &state,
+        &claims,
+        role.tenant_id,
+        "operator_role.delete",
+        Some(id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -220,6 +248,15 @@ pub async fn assign_permission_to_role(
         .operator_roles_repo
         .assign_permission(role_id, permission_id)
         .await?;
+    audit::record(
+        &state,
+        &claims,
+        role.tenant_id,
+        "operator_role.permission_assigned",
+        Some(role_id),
+        serde_json::json!({ "permission_id": permission_id }),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -241,6 +278,15 @@ pub async fn revoke_permission_from_role(
         .operator_roles_repo
         .revoke_permission(role_id, permission_id)
         .await?;
+    audit::record(
+        &state,
+        &claims,
+        role.tenant_id,
+        "operator_role.permission_revoked",
+        Some(role_id),
+        serde_json::json!({ "permission_id": permission_id }),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -251,7 +297,10 @@ pub async fn list_operator_role_assignments(
 ) -> Result<Json<Value>> {
     // Listing an operator's roles is a property of the operator (global resource).
     require_perm(&state, &claims, Scope::Global, OPERATORS, READ).await?;
-    let items = state.operator_roles_repo.list_for_operator(operator_id).await?;
+    let items = state
+        .operator_roles_repo
+        .list_for_operator(operator_id)
+        .await?;
     let data: Vec<Value> = items.iter().map(role_to_json).collect();
     Ok(Json(json!({ "roles": data, "total": data.len() })))
 }
@@ -277,6 +326,15 @@ pub async fn assign_role_to_operator(
         .operator_roles_repo
         .assign_to_operator(operator_id, role_id)
         .await?;
+    audit::record(
+        &state,
+        &claims,
+        role.tenant_id,
+        "operator_role.assigned_to_operator",
+        Some(operator_id),
+        serde_json::json!({ "role_id": role_id }),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -299,5 +357,14 @@ pub async fn revoke_role_from_operator(
         .operator_roles_repo
         .revoke_from_operator(operator_id, role_id)
         .await?;
+    audit::record(
+        &state,
+        &claims,
+        role.tenant_id,
+        "operator_role.revoked_from_operator",
+        Some(operator_id),
+        serde_json::json!({ "role_id": role_id }),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }

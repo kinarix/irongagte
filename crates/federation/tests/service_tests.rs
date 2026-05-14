@@ -138,8 +138,10 @@ async fn provision_or_link_returns_existing_user_when_identity_already_linked() 
 
     let svc = make_service(users, identities);
     let federated = make_federated(true);
-    let (returned_user, returned_identity) =
-        svc.provision_or_link(federated, "google", tenant_id).await.unwrap();
+    let (returned_user, returned_identity) = svc
+        .provision_or_link(federated, "google", tenant_id)
+        .await
+        .unwrap();
 
     assert_eq!(returned_user.id, user.id);
     assert_eq!(returned_identity.id, identity.id);
@@ -154,24 +156,21 @@ async fn provision_or_link_jit_provisions_new_user_for_unknown_email() {
         .expect_get_by_email()
         .once()
         .returning(|_, _| Err(StoreError::NotFound("user".into())));
-    users
-        .expect_create()
-        .once()
-        .returning(Ok);
+    users.expect_create().once().returning(Ok);
 
     let mut identities = MockIdentityRepo::new();
     identities
         .expect_get_by_provider()
         .once()
         .returning(|_, _, _| Err(StoreError::NotFound("identity".into())));
-    identities
-        .expect_create()
-        .once()
-        .returning(Ok);
+    identities.expect_create().once().returning(Ok);
 
     let svc = make_service(users, identities);
     let federated = make_federated(true);
-    let (user, identity) = svc.provision_or_link(federated, "google", tenant_id).await.unwrap();
+    let (user, identity) = svc
+        .provision_or_link(federated, "google", tenant_id)
+        .await
+        .unwrap();
 
     assert_eq!(user.email, "alice@example.com");
     assert!(user.email_verified);
@@ -195,15 +194,14 @@ async fn provision_or_link_links_identity_to_existing_user_with_verified_email()
         .expect_get_by_provider()
         .once()
         .returning(|_, _, _| Err(StoreError::NotFound("identity".into())));
-    identities
-        .expect_create()
-        .once()
-        .returning(Ok);
+    identities.expect_create().once().returning(Ok);
 
     let svc = make_service(users, identities);
     let federated = make_federated(true);
-    let (user, identity) =
-        svc.provision_or_link(federated, "google", tenant_id).await.unwrap();
+    let (user, identity) = svc
+        .provision_or_link(federated, "google", tenant_id)
+        .await
+        .unwrap();
 
     assert_eq!(user.id, existing_user.id);
     assert_eq!(identity.user_id, existing_user.id);
@@ -248,7 +246,9 @@ async fn provision_or_link_propagates_identity_repo_error() {
         .returning(|_, _, _| Err(StoreError::Database("connection refused".into())));
 
     let svc = make_service(users, identities);
-    let result = svc.provision_or_link(make_federated(true), "google", tenant_id).await;
+    let result = svc
+        .provision_or_link(make_federated(true), "google", tenant_id)
+        .await;
     assert!(
         matches!(result, Err(FederationError::Store(_))),
         "expected Store error, got {result:?}"
@@ -276,7 +276,9 @@ async fn provision_or_link_propagates_user_create_error() {
         .returning(|_, _, _| Err(StoreError::NotFound("identity".into())));
 
     let svc = make_service(users, identities);
-    let result = svc.provision_or_link(make_federated(true), "google", tenant_id).await;
+    let result = svc
+        .provision_or_link(make_federated(true), "google", tenant_id)
+        .await;
     assert!(
         matches!(result, Err(FederationError::Store(_))),
         "expected Store error, got {result:?}"
@@ -296,23 +298,45 @@ fn oidc_provider_builds_with_valid_config() {
 async fn oidc_authorization_url_includes_required_params() {
     let svc = make_oidc_provider();
     let url = svc.authorization_url("my-state-token", None).await.unwrap();
-    let query: std::collections::HashMap<String, String> =
-        url.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+    let query: std::collections::HashMap<String, String> = url
+        .query_pairs()
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
 
     assert_eq!(query.get("response_type").map(|s| s.as_str()), Some("code"));
-    assert_eq!(query.get("client_id").map(|s| s.as_str()), Some("my-client-id"));
-    assert_eq!(query.get("state").map(|s| s.as_str()), Some("my-state-token"));
-    assert!(query.contains_key("scope"), "URL should include scope param");
-    assert!(query.contains_key("redirect_uri"), "URL should include redirect_uri");
-    assert!(!query.contains_key("nonce"), "nonce should not appear when not provided");
+    assert_eq!(
+        query.get("client_id").map(|s| s.as_str()),
+        Some("my-client-id")
+    );
+    assert_eq!(
+        query.get("state").map(|s| s.as_str()),
+        Some("my-state-token")
+    );
+    assert!(
+        query.contains_key("scope"),
+        "URL should include scope param"
+    );
+    assert!(
+        query.contains_key("redirect_uri"),
+        "URL should include redirect_uri"
+    );
+    assert!(
+        !query.contains_key("nonce"),
+        "nonce should not appear when not provided"
+    );
 }
 
 #[tokio::test]
 async fn oidc_authorization_url_includes_nonce_when_provided() {
     let svc = make_oidc_provider();
-    let url = svc.authorization_url("state-xyz", Some("my-nonce")).await.unwrap();
-    let query: std::collections::HashMap<String, String> =
-        url.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+    let url = svc
+        .authorization_url("state-xyz", Some("my-nonce"))
+        .await
+        .unwrap();
+    let query: std::collections::HashMap<String, String> = url
+        .query_pairs()
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
 
     assert_eq!(query.get("nonce").map(|s| s.as_str()), Some("my-nonce"));
 }
@@ -338,8 +362,10 @@ async fn oauth2_authorization_url_includes_required_params() {
         "https://app.example.com/callback".into(),
     ));
     let url = svc.authorization_url("csrf-token", None).await.unwrap();
-    let query: std::collections::HashMap<String, String> =
-        url.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+    let query: std::collections::HashMap<String, String> = url
+        .query_pairs()
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
 
     assert_eq!(query.get("response_type").map(|s| s.as_str()), Some("code"));
     assert_eq!(query.get("client_id").map(|s| s.as_str()), Some("gh-id"));
@@ -387,7 +413,11 @@ async fn ldap_exchange_callback_returns_configuration_error() {
         name_attr: "cn".into(),
     });
 
-    let params = CallbackParams { code: "x".into(), state: "y".into(), nonce: None };
+    let params = CallbackParams {
+        code: "x".into(),
+        state: "y".into(),
+        nonce: None,
+    };
     let result = svc.exchange_callback(params).await;
     assert!(
         matches!(result, Err(IdpError::Configuration(_))),

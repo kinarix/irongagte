@@ -4,7 +4,10 @@ use crate::errors::*;
 
 #[test]
 fn core_error_display() {
-    assert_eq!(CoreError::NotFound("user".into()).to_string(), "not found: user");
+    assert_eq!(
+        CoreError::NotFound("user".into()).to_string(),
+        "not found: user"
+    );
     assert_eq!(
         CoreError::Validation("email required".into()).to_string(),
         "validation error: email required"
@@ -72,11 +75,17 @@ fn store_error_display() {
 
 #[test]
 fn auth_error_display() {
-    assert_eq!(AuthError::InvalidCredentials.to_string(), "invalid credentials");
+    assert_eq!(
+        AuthError::InvalidCredentials.to_string(),
+        "invalid credentials"
+    );
     assert_eq!(AuthError::AccountLocked.to_string(), "account locked");
     assert_eq!(AuthError::AccountSuspended.to_string(), "account suspended");
     assert_eq!(AuthError::TokenExpired.to_string(), "token expired");
-    assert_eq!(AuthError::TokenAlreadyUsed.to_string(), "token already used");
+    assert_eq!(
+        AuthError::TokenAlreadyUsed.to_string(),
+        "token already used"
+    );
     assert_eq!(AuthError::MfaRequired.to_string(), "mfa required");
     assert_eq!(AuthError::InvalidMfaCode.to_string(), "invalid mfa code");
     assert_eq!(AuthError::SessionExpired.to_string(), "session expired");
@@ -137,7 +146,10 @@ fn federation_error_from_store_error() {
 
 #[test]
 fn authz_error_display() {
-    assert_eq!(AuthzError::PermissionDenied.to_string(), "permission denied");
+    assert_eq!(
+        AuthzError::PermissionDenied.to_string(),
+        "permission denied"
+    );
     assert_eq!(
         AuthzError::RoleNotFound("superadmin".into()).to_string(),
         "role not found: superadmin"
@@ -196,8 +208,14 @@ fn webauthn_error_display() {
         WebAuthnError::Authentication("sig invalid".into()).to_string(),
         "authentication failed: sig invalid"
     );
-    assert_eq!(WebAuthnError::ChallengeMismatch.to_string(), "challenge mismatch");
-    assert_eq!(WebAuthnError::CredentialNotFound.to_string(), "credential not found");
+    assert_eq!(
+        WebAuthnError::ChallengeMismatch.to_string(),
+        "challenge mismatch"
+    );
+    assert_eq!(
+        WebAuthnError::CredentialNotFound.to_string(),
+        "credential not found"
+    );
     assert_eq!(
         WebAuthnError::Internal("panic".into()).to_string(),
         "internal error: panic"

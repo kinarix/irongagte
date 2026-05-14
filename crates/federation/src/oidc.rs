@@ -50,7 +50,10 @@ struct IdTokenClaims {
 
 impl OidcProvider {
     pub fn new(config: OidcConfig) -> Self {
-        Self { config, client: Client::new() }
+        Self {
+            config,
+            client: Client::new(),
+        }
     }
 
     /// Convenience async constructor: fetches the OIDC discovery document and
@@ -120,8 +123,8 @@ impl OidcProvider {
         jwks: &JwkSet,
         nonce: Option<&str>,
     ) -> Result<IdTokenClaims, IdpError> {
-        let header = decode_header(id_token)
-            .map_err(|e| IdpError::InvalidResponse(e.to_string()))?;
+        let header =
+            decode_header(id_token).map_err(|e| IdpError::InvalidResponse(e.to_string()))?;
 
         let jwk = if let Some(kid) = &header.kid {
             jwks.find(kid)
@@ -134,8 +137,8 @@ impl OidcProvider {
             ));
         };
 
-        let key = DecodingKey::from_jwk(jwk)
-            .map_err(|e| IdpError::InvalidResponse(e.to_string()))?;
+        let key =
+            DecodingKey::from_jwk(jwk).map_err(|e| IdpError::InvalidResponse(e.to_string()))?;
 
         let alg = match header.alg {
             Algorithm::RS256 => Algorithm::RS256,
@@ -215,7 +218,9 @@ impl IdentityProvider for OidcProvider {
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            return Err(IdpError::TokenExchangeFailed(format!("HTTP {status}: {body}")));
+            return Err(IdpError::TokenExchangeFailed(format!(
+                "HTTP {status}: {body}"
+            )));
         }
 
         let token_resp: TokenResponse = response
@@ -230,8 +235,7 @@ impl IdentityProvider for OidcProvider {
         let jwks = self.fetch_jwks().await?;
         let claims = self.verify_id_token(&id_token, &jwks, params.nonce.as_deref())?;
 
-        let raw_claims =
-            serde_json::to_value(&claims).unwrap_or(serde_json::Value::Null);
+        let raw_claims = serde_json::to_value(&claims).unwrap_or(serde_json::Value::Null);
 
         let email = claims
             .email

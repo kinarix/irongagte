@@ -21,7 +21,10 @@ impl RedisSessionStore {
         let client = Builder::from_config(config)
             .build()
             .map_err(|e| StoreError::Cache(e.to_string()))?;
-        client.init().await.map_err(|e| StoreError::Cache(e.to_string()))?;
+        client
+            .init()
+            .await
+            .map_err(|e| StoreError::Cache(e.to_string()))?;
         Ok(Self { client })
     }
 
@@ -50,8 +53,7 @@ impl SessionRepository for RedisSessionStore {
         let user_key = Self::user_sessions_key(session.tenant_id, session.user_id);
         let ttl = Self::ttl_secs(&session);
 
-        let json = serde_json::to_string(&session)
-            .map_err(|e| StoreError::Cache(e.to_string()))?;
+        let json = serde_json::to_string(&session).map_err(|e| StoreError::Cache(e.to_string()))?;
 
         let _: () = self
             .client
@@ -91,8 +93,8 @@ impl SessionRepository for RedisSessionStore {
             serde_json::from_str(&json).map_err(|e| StoreError::Cache(e.to_string()))?;
         session.revoked_at = Some(time::OffsetDateTime::now_utc());
 
-        let updated = serde_json::to_string(&session)
-            .map_err(|e| StoreError::Cache(e.to_string()))?;
+        let updated =
+            serde_json::to_string(&session).map_err(|e| StoreError::Cache(e.to_string()))?;
         let ttl = Self::ttl_secs(&session);
 
         let _: () = self
@@ -111,14 +113,13 @@ impl SessionRepository for RedisSessionStore {
         Ok(())
     }
 
-    async fn revoke_all_for_user(
-        &self,
-        user_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<u64, StoreError> {
+    async fn revoke_all_for_user(&self, user_id: Uuid, tenant_id: Uuid) -> Result<u64, StoreError> {
         let user_key = Self::user_sessions_key(tenant_id, user_id);
-        let session_ids: Vec<String> =
-            self.client.smembers(&user_key).await.map_err(Self::map_err)?;
+        let session_ids: Vec<String> = self
+            .client
+            .smembers(&user_key)
+            .await
+            .map_err(Self::map_err)?;
 
         let count = session_ids.len() as u64;
         let now = time::OffsetDateTime::now_utc();
@@ -156,8 +157,11 @@ impl SessionRepository for RedisSessionStore {
         tenant_id: Uuid,
     ) -> Result<Vec<Session>, StoreError> {
         let user_key = Self::user_sessions_key(tenant_id, user_id);
-        let session_ids: Vec<String> =
-            self.client.smembers(&user_key).await.map_err(Self::map_err)?;
+        let session_ids: Vec<String> = self
+            .client
+            .smembers(&user_key)
+            .await
+            .map_err(Self::map_err)?;
 
         let mut sessions = Vec::with_capacity(session_ids.len());
         for id_str in &session_ids {
@@ -187,8 +191,7 @@ impl AuthCodeStore for RedisSessionStore {
         ttl_secs: i64,
     ) -> Result<(), StoreError> {
         let key = Self::auth_code_key(code);
-        let json =
-            serde_json::to_string(&data).map_err(|e| StoreError::Cache(e.to_string()))?;
+        let json = serde_json::to_string(&data).map_err(|e| StoreError::Cache(e.to_string()))?;
         let _: () = self
             .client
             .set(&key, json, Some(Expiration::EX(ttl_secs)), None, false)
@@ -203,8 +206,8 @@ impl AuthCodeStore for RedisSessionStore {
         match json {
             None => Ok(None),
             Some(j) => {
-                let data = serde_json::from_str(&j)
-                    .map_err(|e| StoreError::Cache(e.to_string()))?;
+                let data =
+                    serde_json::from_str(&j).map_err(|e| StoreError::Cache(e.to_string()))?;
                 Ok(Some(data))
             }
         }

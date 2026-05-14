@@ -10,7 +10,10 @@ use irongate_crypto::token::generate_token;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{error::{Error, Result}, state::AppState};
+use crate::{
+    error::{Error, Result},
+    state::AppState,
+};
 
 const CODE_TTL_SECS: i64 = 600; // 10 minutes
 
@@ -45,7 +48,9 @@ pub async fn get_authorize(
     Query(params): Query<AuthorizeParams>,
 ) -> Result<Html<String>> {
     if params.response_type != "code" {
-        return Err(Error::BadRequest("only response_type=code is supported".into()));
+        return Err(Error::BadRequest(
+            "only response_type=code is supported".into(),
+        ));
     }
     if params.code_challenge_method.to_uppercase() != "S256" {
         return Err(Error::BadRequest(
@@ -161,9 +166,9 @@ fn login_form_html(
     error: Option<&str>,
 ) -> String {
     let error_html = match error {
-        Some(msg) => format!(
-            r#"<p style="color:#ef4444;font-size:0.875rem;text-align:center">{msg}</p>"#
-        ),
+        Some(msg) => {
+            format!(r#"<p style="color:#ef4444;font-size:0.875rem;text-align:center">{msg}</p>"#)
+        }
         None => String::new(),
     };
 

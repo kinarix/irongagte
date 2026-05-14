@@ -83,8 +83,8 @@ impl LdapProvider {
             .ok_or_else(|| IdpError::InvalidResponse("LDAP entry missing mail attribute".into()))?;
 
         let name = first_attr(&entry, &self.config.name_attr);
-        let provider_user_id = first_attr(&entry, &self.config.uid_attr)
-            .unwrap_or_else(|| username.to_string());
+        let provider_user_id =
+            first_attr(&entry, &self.config.uid_attr).unwrap_or_else(|| username.to_string());
 
         ldap.unbind().await.ok();
 
@@ -129,11 +129,7 @@ impl IdentityProvider for LdapProvider {
         &self.config.name
     }
 
-    async fn authorization_url(
-        &self,
-        _state: &str,
-        _nonce: Option<&str>,
-    ) -> Result<Url, IdpError> {
+    async fn authorization_url(&self, _state: &str, _nonce: Option<&str>) -> Result<Url, IdpError> {
         Err(IdpError::Configuration(
             "LDAP does not use browser-redirect flow; call LdapProvider::authenticate directly"
                 .into(),

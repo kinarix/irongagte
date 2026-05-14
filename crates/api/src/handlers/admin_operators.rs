@@ -17,6 +17,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
+    audit,
     authz_op::{require_perm, Scope},
     error::{Error, Result},
     handlers::admin_auth::AdminClaims,
@@ -106,6 +107,15 @@ pub async fn create_operator(
     };
     state.operator_credentials.create(creds).await?;
 
+    audit::record(
+        &state,
+        &claims,
+        None,
+        "operator.create",
+        Some(created.id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(operator_to_json(&created))))
 }
 
@@ -140,6 +150,15 @@ pub async fn update_operator(
     }
     op.updated_at = OffsetDateTime::now_utc();
     let updated = state.operators.update(op).await?;
+    audit::record(
+        &state,
+        &claims,
+        None,
+        "operator.update",
+        Some(updated.id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(Json(operator_to_json(&updated)))
 }
 
@@ -155,6 +174,15 @@ pub async fn delete_operator(
         ));
     }
     state.operators.soft_delete(id).await?;
+    audit::record(
+        &state,
+        &claims,
+        None,
+        "operator.delete",
+        Some(id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -184,5 +212,14 @@ pub async fn change_password(
             state.operator_credentials.create(c).await?;
         }
     }
+    audit::record(
+        &state,
+        &claims,
+        None,
+        "operator.password_change",
+        Some(id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }

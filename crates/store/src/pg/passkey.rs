@@ -50,14 +50,12 @@ impl irongate_core::repositories::PasskeyRepository for PgPasskeyRepo {
         credential_id: &str,
         tenant_id: Uuid,
     ) -> Result<PasskeyCredential, StoreError> {
-        let row = sqlx::query(
-            "SELECT * FROM passkeys WHERE credential_id = $1 AND tenant_id = $2",
-        )
-        .bind(credential_id)
-        .bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(map_db_err)?;
+        let row = sqlx::query("SELECT * FROM passkeys WHERE credential_id = $1 AND tenant_id = $2")
+            .bind(credential_id)
+            .bind(tenant_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_db_err)?;
 
         match row {
             Some(r) => row_to_passkey(&r),

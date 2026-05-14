@@ -16,6 +16,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
+    audit,
     authz_op::{require_perm, Scope},
     error::{Error, Result},
     handlers::admin_auth::AdminClaims,
@@ -60,7 +61,14 @@ pub async fn list_idp_configs(
     State(state): State<Arc<AppState>>,
     Query(q): Query<TenantQuery>,
 ) -> Result<Json<Value>> {
-    require_perm(&state, &claims, Scope::Tenant(q.tenant_id), IDP_CONFIGS, LIST).await?;
+    require_perm(
+        &state,
+        &claims,
+        Scope::Tenant(q.tenant_id),
+        IDP_CONFIGS,
+        LIST,
+    )
+    .await?;
     let items = state.idp_configs.list(q.tenant_id).await?;
     let data: Vec<Value> = items.iter().map(idp_to_json).collect();
     Ok(Json(json!({ "idp_configs": data, "total": data.len() })))
@@ -95,6 +103,15 @@ pub async fn create_idp_config(
         updated_at: now,
     };
     let created = state.idp_configs.create(config).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(created.tenant_id),
+        "idp_config.create",
+        Some(created.id),
+        serde_json::json!({ "provider_type": format!("{:?}", created.provider_type).to_lowercase() }),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(idp_to_json(&created))))
 }
 
@@ -114,7 +131,14 @@ pub async fn update_idp_config(
     Path((tenant_id, id)): Path<(Uuid, Uuid)>,
     Json(req): Json<UpdateIdpRequest>,
 ) -> Result<Json<Value>> {
-    require_perm(&state, &claims, Scope::Tenant(tenant_id), IDP_CONFIGS, UPDATE).await?;
+    require_perm(
+        &state,
+        &claims,
+        Scope::Tenant(tenant_id),
+        IDP_CONFIGS,
+        UPDATE,
+    )
+    .await?;
     let mut config = state.idp_configs.get_by_id(id, tenant_id).await?;
     if let Some(name) = req.name {
         config.name = name;
@@ -127,6 +151,15 @@ pub async fn update_idp_config(
     }
     config.updated_at = OffsetDateTime::now_utc();
     let updated = state.idp_configs.update(config).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(updated.tenant_id),
+        "idp_config.update",
+        Some(updated.id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(Json(idp_to_json(&updated)))
 }
 
@@ -135,7 +168,23 @@ pub async fn delete_idp_config(
     State(state): State<Arc<AppState>>,
     Path((tenant_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode> {
-    require_perm(&state, &claims, Scope::Tenant(tenant_id), IDP_CONFIGS, DELETE).await?;
+    require_perm(
+        &state,
+        &claims,
+        Scope::Tenant(tenant_id),
+        IDP_CONFIGS,
+        DELETE,
+    )
+    .await?;
     state.idp_configs.delete(id, tenant_id).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(tenant_id),
+        "idp_config.delete",
+        Some(id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -37,8 +37,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let operators: Arc<dyn OperatorRepository> = Arc::new(pg.operators());
     let operator_creds: Arc<dyn OperatorCredentialsRepository> =
         Arc::new(pg.operator_credentials());
-    let operator_perms: Arc<dyn OperatorPermissionRepository> =
-        Arc::new(pg.operator_permissions());
+    let operator_perms: Arc<dyn OperatorPermissionRepository> = Arc::new(pg.operator_permissions());
     let operator_roles: Arc<dyn OperatorRoleRepository> = Arc::new(pg.operator_roles());
     let tenants: Arc<dyn TenantRepository> = Arc::new(pg.tenants());
 
@@ -94,7 +93,10 @@ async fn upsert_operator(
         last_login_at: None,
         deleted_at: None,
     };
-    operators.create(op).await.context("failed to create operator")
+    operators
+        .create(op)
+        .await
+        .context("failed to create operator")
 }
 
 async fn set_operator_password(
@@ -108,7 +110,10 @@ async fn set_operator_password(
         Ok(mut existing) => {
             existing.password_hash = hash;
             existing.updated_at = now;
-            creds.update(existing).await.context("failed to update operator password")?;
+            creds
+                .update(existing)
+                .await
+                .context("failed to update operator password")?;
         }
         Err(_) => {
             let c = OperatorCredentials {
@@ -117,7 +122,10 @@ async fn set_operator_password(
                 created_at: now,
                 updated_at: now,
             };
-            creds.create(c).await.context("failed to create operator credentials")?;
+            creds
+                .create(c)
+                .await
+                .context("failed to create operator credentials")?;
         }
     }
     Ok(())
@@ -137,7 +145,10 @@ async fn upsert_default_tenant(tenants: Arc<dyn TenantRepository>) -> anyhow::Re
         updated_at: now,
         deleted_at: None,
     };
-    tenants.create(t).await.context("failed to create default tenant")
+    tenants
+        .create(t)
+        .await
+        .context("failed to create default tenant")
 }
 
 async fn seed_operator_permission_catalog(
@@ -188,7 +199,10 @@ async fn upsert_super_admin_role(
                 created_at: now,
                 updated_at: now,
             };
-            roles.create(r).await.context("failed to create super_admin role")?
+            roles
+                .create(r)
+                .await
+                .context("failed to create super_admin role")?
         }
     };
 
@@ -224,7 +238,10 @@ async fn upsert_viewer_role(
                 created_at: now,
                 updated_at: now,
             };
-            roles.create(r).await.context("failed to create viewer role")?
+            roles
+                .create(r)
+                .await
+                .context("failed to create viewer role")?
         }
     };
 

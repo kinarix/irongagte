@@ -1,11 +1,7 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use irongate_core::{errors::StoreError, types::OperatorStatus};
 use irongate_crypto::{hash::verify_password, jwt::sign};
 use serde::Deserialize;
@@ -98,9 +94,7 @@ pub async fn login(
     })))
 }
 
-pub async fn me(
-    claims: super::admin_auth::AdminClaims,
-) -> Result<Json<Value>> {
+pub async fn me(claims: super::admin_auth::AdminClaims) -> Result<Json<Value>> {
     Ok(Json(json!({
         "id": claims.0.sub,
         "email": claims.0.email,

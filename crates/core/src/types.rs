@@ -254,8 +254,9 @@ pub mod op_resource {
 }
 
 /// Actions allowed for Operator RBAC.
-pub const ALLOWED_OPERATOR_ACTIONS: &[&str] =
-    &["create", "read", "update", "delete", "list", "assign", "revoke"];
+pub const ALLOWED_OPERATOR_ACTIONS: &[&str] = &[
+    "create", "read", "update", "delete", "list", "assign", "revoke",
+];
 
 pub mod op_action {
     pub const CREATE: &str = "create";
@@ -561,7 +562,9 @@ pub struct Group {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AuditEvent {
     pub id: Uuid,
-    pub tenant_id: Uuid,
+    /// `None` for system-level events (operator / operator-role / operator-permission
+    /// CRUD) that have no tenant context. All tenant-scoped events use `Some(...)`.
+    pub tenant_id: Option<Uuid>,
     pub event_type: String,
     pub actor_id: Option<Uuid>,
     pub target_id: Option<Uuid>,

@@ -19,7 +19,10 @@ impl SessionService {
         sessions: Arc<dyn SessionRepository>,
         refresh_tokens: Arc<dyn RefreshTokenRepository>,
     ) -> Self {
-        Self { sessions, refresh_tokens }
+        Self {
+            sessions,
+            refresh_tokens,
+        }
     }
 
     /// Create a new session and an initial refresh token.
@@ -50,7 +53,11 @@ impl SessionService {
             expires_at: now + time::Duration::seconds(session_ttl_secs),
             revoked_at: None,
         };
-        let session = self.sessions.create(session).await.map_err(AuthError::Store)?;
+        let session = self
+            .sessions
+            .create(session)
+            .await
+            .map_err(AuthError::Store)?;
 
         let raw_token = generate_token();
         let token_hash = hash_token(&raw_token);
@@ -66,17 +73,24 @@ impl SessionService {
             expires_at: now + time::Duration::seconds(refresh_token_ttl_secs),
             revoked_at: None,
         };
-        self.refresh_tokens.create(refresh_token).await.map_err(AuthError::Store)?;
+        self.refresh_tokens
+            .create(refresh_token)
+            .await
+            .map_err(AuthError::Store)?;
 
         Ok((session, raw_token))
     }
 
     /// Validate a session by ID. Returns the session if valid.
     pub async fn validate_session(&self, session_id: Uuid) -> Result<Session, AuthError> {
-        let session = self.sessions.get_by_id(session_id).await.map_err(|e| match e {
-            StoreError::NotFound(_) => AuthError::SessionNotFound,
-            other => AuthError::Store(other),
-        })?;
+        let session = self
+            .sessions
+            .get_by_id(session_id)
+            .await
+            .map_err(|e| match e {
+                StoreError::NotFound(_) => AuthError::SessionNotFound,
+                other => AuthError::Store(other),
+            })?;
 
         if !session.is_valid() {
             return Err(AuthError::SessionExpired);
@@ -115,12 +129,14 @@ impl SessionService {
         }
 
         // Validate the associated session.
-        let session = self.sessions.get_by_id(old_token.session_id).await.map_err(|e| {
-            match e {
+        let session = self
+            .sessions
+            .get_by_id(old_token.session_id)
+            .await
+            .map_err(|e| match e {
                 StoreError::NotFound(_) => AuthError::SessionNotFound,
                 other => AuthError::Store(other),
-            }
-        })?;
+            })?;
 
         if session.tenant_id != tenant_id {
             return Err(AuthError::SessionNotFound);
@@ -131,7 +147,10 @@ impl SessionService {
         }
 
         // Revoke the old token and issue a new one.
-        self.refresh_tokens.revoke(old_token.id).await.map_err(AuthError::Store)?;
+        self.refresh_tokens
+            .revoke(old_token.id)
+            .await
+            .map_err(AuthError::Store)?;
 
         let now = OffsetDateTime::now_utc();
         let raw_new = generate_token();
@@ -148,7 +167,10 @@ impl SessionService {
             expires_at: now + time::Duration::seconds(refresh_token_ttl_secs),
             revoked_at: None,
         };
-        self.refresh_tokens.create(new_token).await.map_err(AuthError::Store)?;
+        self.refresh_tokens
+            .create(new_token)
+            .await
+            .map_err(AuthError::Store)?;
 
         Ok((session, raw_new))
     }

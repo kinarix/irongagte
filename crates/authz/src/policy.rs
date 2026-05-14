@@ -30,10 +30,7 @@ pub enum Condition {
         value: serde_json::Value,
     },
     /// Allow only within a window of hours (UTC, [start_hour, end_hour)).
-    TimeRange {
-        start_hour: u8,
-        end_hour: u8,
-    },
+    TimeRange { start_hour: u8, end_hour: u8 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,12 +68,19 @@ impl Default for EvaluationContext {
 /// When `effect` is `Deny`,  returns `true` means the policy blocks access.
 /// Callers decide how to combine multiple policies (deny-overrides is typical).
 pub fn evaluate(policy: &AbacPolicy, ctx: &EvaluationContext) -> bool {
-    policy.conditions.iter().all(|cond| check_condition(cond, ctx))
+    policy
+        .conditions
+        .iter()
+        .all(|cond| check_condition(cond, ctx))
 }
 
 fn check_condition(cond: &Condition, ctx: &EvaluationContext) -> bool {
     match cond {
-        Condition::UserAttribute { attribute, operator, value } => {
+        Condition::UserAttribute {
+            attribute,
+            operator,
+            value,
+        } => {
             let actual = ctx.user_attributes.get(attribute.as_str());
             match operator {
                 Operator::Eq => actual == Some(value),
@@ -97,7 +101,10 @@ fn check_condition(cond: &Condition, ctx: &EvaluationContext) -> bool {
                 }
             }
         }
-        Condition::TimeRange { start_hour, end_hour } => {
+        Condition::TimeRange {
+            start_hour,
+            end_hour,
+        } => {
             let hour = ctx.request_time.hour();
             hour >= *start_hour && hour < *end_hour
         }

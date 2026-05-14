@@ -11,9 +11,7 @@ pub struct PgUserRepo {
 
 fn row_to_user(row: &sqlx::postgres::PgRow) -> Result<User, StoreError> {
     let status_str: String = row.try_get("status").map_err(map_row_err)?;
-    let status: UserStatus = status_str
-        .parse()
-        .map_err(|_| map_parse_err("status"))?;
+    let status: UserStatus = status_str.parse().map_err(|_| map_parse_err("status"))?;
     Ok(User {
         id: row.try_get("id").map_err(map_row_err)?,
         tenant_id: row.try_get("tenant_id").map_err(map_row_err)?,

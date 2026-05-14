@@ -24,9 +24,9 @@ fn row_to_group(row: &sqlx::postgres::PgRow) -> Result<Group, StoreError> {
 fn row_to_user(row: &sqlx::postgres::PgRow) -> Result<User, StoreError> {
     use irongate_core::types::UserStatus;
     let status_str: String = row.try_get("status").map_err(map_row_err)?;
-    let status: UserStatus = status_str.parse().map_err(|_| {
-        StoreError::Database(format!("unknown user status: {status_str}"))
-    })?;
+    let status: UserStatus = status_str
+        .parse()
+        .map_err(|_| StoreError::Database(format!("unknown user status: {status_str}")))?;
     Ok(User {
         id: row.try_get("id").map_err(map_row_err)?,
         tenant_id: row.try_get("tenant_id").map_err(map_row_err)?,
@@ -80,13 +80,12 @@ impl irongate_core::repositories::GroupRepository for PgGroupRepo {
         display_name: &str,
         tenant_id: Uuid,
     ) -> Result<Group, StoreError> {
-        let row =
-            sqlx::query("SELECT * FROM groups WHERE display_name = $1 AND tenant_id = $2")
-                .bind(display_name)
-                .bind(tenant_id)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(map_db_err)?;
+        let row = sqlx::query("SELECT * FROM groups WHERE display_name = $1 AND tenant_id = $2")
+            .bind(display_name)
+            .bind(tenant_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(map_db_err)?;
         row_to_group(&row)
     }
 
@@ -172,11 +171,7 @@ impl irongate_core::repositories::GroupRepository for PgGroupRepo {
         Ok(())
     }
 
-    async fn list_members(
-        &self,
-        group_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<Vec<User>, StoreError> {
+    async fn list_members(&self, group_id: Uuid, tenant_id: Uuid) -> Result<Vec<User>, StoreError> {
         let rows = sqlx::query(
             "SELECT u.* FROM users u
              JOIN group_members gm ON gm.user_id = u.id

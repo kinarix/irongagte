@@ -30,6 +30,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
+    audit,
     authz_op::{require_perm, Scope},
     error::{Error, Result},
     handlers::admin_auth::AdminClaims,
@@ -89,7 +90,9 @@ pub async fn list_claim_definitions(
         state.claim_definitions.list_for_tenant(q.tenant_id).await?
     };
     let data: Vec<Value> = defs.iter().map(def_to_json).collect();
-    Ok(Json(json!({ "claim_definitions": data, "total": data.len() })))
+    Ok(Json(
+        json!({ "claim_definitions": data, "total": data.len() }),
+    ))
 }
 
 pub async fn create_claim_definition(
@@ -97,7 +100,14 @@ pub async fn create_claim_definition(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateClaimDefRequest>,
 ) -> Result<(StatusCode, Json<Value>)> {
-    require_perm(&state, &claims, Scope::Tenant(req.tenant_id), CLAIMS, CREATE).await?;
+    require_perm(
+        &state,
+        &claims,
+        Scope::Tenant(req.tenant_id),
+        CLAIMS,
+        CREATE,
+    )
+    .await?;
     // Verify the application belongs to this tenant.
     let _app = state
         .applications
@@ -117,6 +127,19 @@ pub async fn create_claim_definition(
         updated_at: now,
     };
     let created = state.claim_definitions.create(def).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(req.tenant_id),
+        "claim_definition.create",
+        Some(created.id),
+        serde_json::json!({
+            "application_id": created.application_id,
+            "key": created.key,
+            "claim_type": format!("{:?}", created.claim_type).to_lowercase(),
+        }),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(def_to_json(&created))))
 }
 
@@ -159,6 +182,15 @@ pub async fn update_claim_definition(
     }
     def.updated_at = OffsetDateTime::now_utc();
     let updated = state.claim_definitions.update(def).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(tenant_id),
+        "claim_definition.update",
+        Some(updated.id),
+        serde_json::json!({ "key": updated.key }),
+    )
+    .await;
     Ok(Json(def_to_json(&updated)))
 }
 
@@ -174,6 +206,15 @@ pub async fn delete_claim_definition(
         .get_by_id(def.application_id, tenant_id)
         .await?;
     state.claim_definitions.delete(id).await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(tenant_id),
+        "claim_definition.delete",
+        Some(id),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -218,11 +259,27 @@ pub async fn assign_group_claim(
     State(state): State<Arc<AppState>>,
     Json(req): Json<GroupClaimAssignment>,
 ) -> Result<(StatusCode, Json<Value>)> {
-    require_perm(&state, &claims, Scope::Tenant(req.tenant_id), CLAIMS, ASSIGN).await?;
+    require_perm(
+        &state,
+        &claims,
+        Scope::Tenant(req.tenant_id),
+        CLAIMS,
+        ASSIGN,
+    )
+    .await?;
     let row = state
         .group_claims
         .assign(req.group_id, req.claim_def_id, &req.value)
         .await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(req.tenant_id),
+        "group_claim.assign",
+        Some(req.group_id),
+        serde_json::json!({ "claim_def_id": req.claim_def_id, "value": req.value }),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(group_claim_to_json(&row))))
 }
 
@@ -231,11 +288,27 @@ pub async fn revoke_group_claim(
     State(state): State<Arc<AppState>>,
     Json(req): Json<GroupClaimAssignment>,
 ) -> Result<StatusCode> {
-    require_perm(&state, &claims, Scope::Tenant(req.tenant_id), CLAIMS, REVOKE).await?;
+    require_perm(
+        &state,
+        &claims,
+        Scope::Tenant(req.tenant_id),
+        CLAIMS,
+        REVOKE,
+    )
+    .await?;
     state
         .group_claims
         .revoke(req.group_id, req.claim_def_id, &req.value)
         .await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(req.tenant_id),
+        "group_claim.revoke",
+        Some(req.group_id),
+        serde_json::json!({ "claim_def_id": req.claim_def_id, "value": req.value }),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -280,11 +353,27 @@ pub async fn assign_user_claim(
     State(state): State<Arc<AppState>>,
     Json(req): Json<UserClaimAssignment>,
 ) -> Result<(StatusCode, Json<Value>)> {
-    require_perm(&state, &claims, Scope::Tenant(req.tenant_id), CLAIMS, ASSIGN).await?;
+    require_perm(
+        &state,
+        &claims,
+        Scope::Tenant(req.tenant_id),
+        CLAIMS,
+        ASSIGN,
+    )
+    .await?;
     let row = state
         .user_claims
         .assign(req.user_id, req.claim_def_id, &req.value)
         .await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(req.tenant_id),
+        "user_claim.assign",
+        Some(req.user_id),
+        serde_json::json!({ "claim_def_id": req.claim_def_id, "value": req.value }),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(user_claim_to_json(&row))))
 }
 
@@ -293,11 +382,27 @@ pub async fn revoke_user_claim(
     State(state): State<Arc<AppState>>,
     Json(req): Json<UserClaimAssignment>,
 ) -> Result<StatusCode> {
-    require_perm(&state, &claims, Scope::Tenant(req.tenant_id), CLAIMS, REVOKE).await?;
+    require_perm(
+        &state,
+        &claims,
+        Scope::Tenant(req.tenant_id),
+        CLAIMS,
+        REVOKE,
+    )
+    .await?;
     state
         .user_claims
         .revoke(req.user_id, req.claim_def_id, &req.value)
         .await?;
+    audit::record(
+        &state,
+        &claims,
+        Some(req.tenant_id),
+        "user_claim.revoke",
+        Some(req.user_id),
+        serde_json::json!({ "claim_def_id": req.claim_def_id, "value": req.value }),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 

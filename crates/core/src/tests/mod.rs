@@ -1,2 +1,2 @@
-mod types_tests;
 mod errors_tests;
+mod types_tests;

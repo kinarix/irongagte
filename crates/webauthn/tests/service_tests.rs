@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use irongate_core::{
-    errors::StoreError,
-    repositories::PasskeyRepository,
-    PasskeyCredential, User, UserStatus,
+    errors::StoreError, repositories::PasskeyRepository, PasskeyCredential, User, UserStatus,
 };
 use irongate_webauthn::WebAuthnService;
 use mockall::mock;
@@ -143,7 +141,9 @@ async fn start_authentication_with_no_credentials_returns_not_found() {
         .returning(|_, _| Ok(vec![]));
 
     let svc = make_service(repo);
-    let result = svc.start_authentication(Uuid::new_v4(), Uuid::new_v4()).await;
+    let result = svc
+        .start_authentication(Uuid::new_v4(), Uuid::new_v4())
+        .await;
     assert!(
         matches!(result, Err(WebAuthnError::CredentialNotFound)),
         "expected CredentialNotFound, got {result:?}"
@@ -160,7 +160,9 @@ async fn start_authentication_propagates_repo_error() {
         .returning(|_, _| Err(StoreError::Database("connection lost".into())));
 
     let svc = make_service(repo);
-    let result = svc.start_authentication(Uuid::new_v4(), Uuid::new_v4()).await;
+    let result = svc
+        .start_authentication(Uuid::new_v4(), Uuid::new_v4())
+        .await;
     assert!(
         matches!(result, Err(WebAuthnError::Store(_))),
         "expected Store error, got {result:?}"
@@ -188,7 +190,9 @@ async fn finish_authentication_with_corrupt_state_returns_challenge_mismatch() {
     });
     let cred: PublicKeyCredential = serde_json::from_value(cred_json).unwrap();
 
-    let result = svc.finish_authentication(Uuid::new_v4(), bad_state, &cred).await;
+    let result = svc
+        .finish_authentication(Uuid::new_v4(), bad_state, &cred)
+        .await;
     assert!(
         matches!(result, Err(WebAuthnError::ChallengeMismatch)),
         "expected ChallengeMismatch, got {result:?}"

@@ -73,26 +73,22 @@ impl irongate_core::repositories::IdentityRepository for PgIdentityRepo {
         user_id: Uuid,
         tenant_id: Uuid,
     ) -> Result<Vec<Identity>, StoreError> {
-        let rows = sqlx::query(
-            "SELECT * FROM identities WHERE user_id = $1 AND tenant_id = $2",
-        )
-        .bind(user_id)
-        .bind(tenant_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(map_db_err)?;
+        let rows = sqlx::query("SELECT * FROM identities WHERE user_id = $1 AND tenant_id = $2")
+            .bind(user_id)
+            .bind(tenant_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_db_err)?;
         rows.iter().map(row_to_identity).collect()
     }
 
     async fn delete(&self, id: Uuid, tenant_id: Uuid) -> Result<(), StoreError> {
-        sqlx::query(
-            "DELETE FROM identities WHERE id = $1 AND tenant_id = $2",
-        )
-        .bind(id)
-        .bind(tenant_id)
-        .execute(&self.pool)
-        .await
-        .map_err(map_db_err)?;
+        sqlx::query("DELETE FROM identities WHERE id = $1 AND tenant_id = $2")
+            .bind(id)
+            .bind(tenant_id)
+            .execute(&self.pool)
+            .await
+            .map_err(map_db_err)?;
         Ok(())
     }
 }

@@ -6,6 +6,7 @@ use anyhow::Context;
 use irongate_api::{config::Settings, router::build_router, state::AppState};
 use irongate_auth::{PasswordService, SessionService};
 use irongate_authz::AuthzService;
+use irongate_core::repositories::AuthCodeStore;
 use irongate_core::repositories::{
     ApplicationRepository, AuditRepository, ClaimDefinitionRepository, GroupClaimRepository,
     GroupRepository, IdentityRepository, IdpConfigRepository, OperatorCredentialsRepository,
@@ -14,7 +15,6 @@ use irongate_core::repositories::{
 };
 use irongate_crypto::keys::generate_rsa_key;
 use irongate_scim::{groups::GroupState, router::scim_router, users::UserState};
-use irongate_core::repositories::AuthCodeStore;
 use irongate_store::{PgStore, RedisSessionStore};
 use tokio::net::TcpListener;
 use uuid::Uuid;
@@ -41,8 +41,11 @@ async fn main() -> anyhow::Result<()> {
     let session_store = RedisSessionStore::new(&settings.redis.url)
         .await
         .context("failed to connect to Redis")?;
-    let auth_code_store: Arc<dyn AuthCodeStore> =
-        Arc::new(RedisSessionStore::new(&settings.redis.url).await.context("failed to connect to Redis (auth codes)")?);
+    let auth_code_store: Arc<dyn AuthCodeStore> = Arc::new(
+        RedisSessionStore::new(&settings.redis.url)
+            .await
+            .context("failed to connect to Redis (auth codes)")?,
+    );
 
     let users: Arc<dyn UserRepository> = Arc::new(pg.users());
     let tenants: Arc<dyn TenantRepository> = Arc::new(pg.tenants());
@@ -73,9 +76,8 @@ async fn main() -> anyhow::Result<()> {
         user_claims.clone(),
     ));
 
-    let signing_key = Arc::new(
-        generate_rsa_key(Uuid::nil(), 365).context("failed to generate signing key")?,
-    );
+    let signing_key =
+        Arc::new(generate_rsa_key(Uuid::nil(), 365).context("failed to generate signing key")?);
 
     let config = Arc::new(settings.clone());
 

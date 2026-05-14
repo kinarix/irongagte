@@ -80,8 +80,8 @@ pub async fn userinfo(
     .map_err(|_| Error::Unauthorized("invalid access token".into()))?
     .claims;
 
-    let user_id = Uuid::parse_str(&claims.sub)
-        .map_err(|_| Error::Unauthorized("invalid subject".into()))?;
+    let user_id =
+        Uuid::parse_str(&claims.sub).map_err(|_| Error::Unauthorized("invalid subject".into()))?;
     let tenant_id = Uuid::parse_str(&claims.tenant_id)
         .map_err(|_| Error::Unauthorized("invalid tenant_id claim".into()))?;
 

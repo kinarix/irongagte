@@ -154,7 +154,11 @@ pub async fn replace_group(
         updated_at: OffsetDateTime::now_utc(),
     };
 
-    let saved = state.groups.update(updated).await.map_err(ScimError::from)?;
+    let saved = state
+        .groups
+        .update(updated)
+        .await
+        .map_err(ScimError::from)?;
 
     // Replace membership: remove all existing, add new set
     let current_members = state
@@ -227,9 +231,7 @@ pub async fn patch_group(
                     .ok_or_else(|| ScimError::BadRequest("displayName must be string".into()))?;
             }
             (crate::types::PatchOpType::Add, "members") => {
-                if let Some(arr) = value.and_then(|v| {
-                    if v.is_array() { Some(v) } else { None }
-                }) {
+                if let Some(arr) = value.and_then(|v| if v.is_array() { Some(v) } else { None }) {
                     for item in arr.as_array().unwrap_or(&vec![]) {
                         if let Some(uid) = item.get("value").and_then(|v| v.as_str()) {
                             if let Ok(user_id) = Uuid::parse_str(uid) {
@@ -244,9 +246,7 @@ pub async fn patch_group(
                 }
             }
             (crate::types::PatchOpType::Remove, "members") => {
-                if let Some(arr) = value.and_then(|v| {
-                    if v.is_array() { Some(v) } else { None }
-                }) {
+                if let Some(arr) = value.and_then(|v| if v.is_array() { Some(v) } else { None }) {
                     for item in arr.as_array().unwrap_or(&vec![]) {
                         if let Some(uid) = item.get("value").and_then(|v| v.as_str()) {
                             if let Ok(user_id) = Uuid::parse_str(uid) {

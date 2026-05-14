@@ -4,10 +4,7 @@ use axum::{
     extract::{Query, State},
     Json,
 };
-use irongate_core::types::{
-    op_action::LIST,
-    op_resource::AUDIT_EVENTS,
-};
+use irongate_core::types::{op_action::LIST, op_resource::AUDIT_EVENTS};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -49,7 +46,14 @@ pub async fn list_audit_events(
     State(state): State<Arc<AppState>>,
     Query(q): Query<AuditQuery>,
 ) -> Result<Json<Value>> {
-    require_perm(&state, &claims, Scope::Tenant(q.tenant_id), AUDIT_EVENTS, LIST).await?;
+    require_perm(
+        &state,
+        &claims,
+        Scope::Tenant(q.tenant_id),
+        AUDIT_EVENTS,
+        LIST,
+    )
+    .await?;
     let items = state.audit.list(q.tenant_id, q.limit, q.offset).await?;
     let data: Vec<Value> = items.iter().map(audit_to_json).collect();
     Ok(Json(json!({ "events": data, "total": data.len() })))

@@ -73,7 +73,10 @@ struct EmailEntry {
 
 impl OAuth2Provider {
     pub fn new(config: OAuth2Config) -> Self {
-        Self { config, client: Client::new() }
+        Self {
+            config,
+            client: Client::new(),
+        }
     }
 
     async fn fetch_access_token(&self, code: &str) -> Result<String, IdpError> {
@@ -96,7 +99,9 @@ impl OAuth2Provider {
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            return Err(IdpError::TokenExchangeFailed(format!("HTTP {status}: {body}")));
+            return Err(IdpError::TokenExchangeFailed(format!(
+                "HTTP {status}: {body}"
+            )));
         }
 
         let token_resp: TokenResponse = response
@@ -111,7 +116,11 @@ impl OAuth2Provider {
         let bearer = format!("Bearer {access_token}");
         self.client
             .get(&self.config.userinfo_endpoint)
-            .header(AUTHORIZATION, HeaderValue::from_str(&bearer).map_err(|e| IdpError::ProviderUnavailable(e.to_string()))?)
+            .header(
+                AUTHORIZATION,
+                HeaderValue::from_str(&bearer)
+                    .map_err(|e| IdpError::ProviderUnavailable(e.to_string()))?,
+            )
             .header(USER_AGENT, HeaderValue::from_static("irongate"))
             .header(ACCEPT, HeaderValue::from_static("application/json"))
             .send()
@@ -123,12 +132,20 @@ impl OAuth2Provider {
     }
 
     /// Calls the emails endpoint to find the primary verified email.
-    async fn fetch_primary_email(&self, access_token: &str, endpoint: &str) -> Result<String, IdpError> {
+    async fn fetch_primary_email(
+        &self,
+        access_token: &str,
+        endpoint: &str,
+    ) -> Result<String, IdpError> {
         let bearer = format!("Bearer {access_token}");
         let emails: Vec<EmailEntry> = self
             .client
             .get(endpoint)
-            .header(AUTHORIZATION, HeaderValue::from_str(&bearer).map_err(|e| IdpError::ProviderUnavailable(e.to_string()))?)
+            .header(
+                AUTHORIZATION,
+                HeaderValue::from_str(&bearer)
+                    .map_err(|e| IdpError::ProviderUnavailable(e.to_string()))?,
+            )
             .header(USER_AGENT, HeaderValue::from_static("irongate"))
             .header(ACCEPT, HeaderValue::from_static("application/json"))
             .send()

@@ -48,16 +48,8 @@ fn build_totp(secret_base32: &str) -> Result<TOTP, CryptoError> {
         .to_bytes()
         .map_err(|e| CryptoError::InvalidKey(e.to_string()))?;
 
-    TOTP::new(
-        Algorithm::SHA1,
-        6,
-        1,
-        30,
-        bytes,
-        None,
-        String::new(),
-    )
-    .map_err(|e| CryptoError::InvalidKey(e.to_string()))
+    TOTP::new(Algorithm::SHA1, 6, 1, 30, bytes, None, String::new())
+        .map_err(|e| CryptoError::InvalidKey(e.to_string()))
 }
 
 #[cfg(test)]

@@ -12,8 +12,8 @@ pub struct PgClaimDefinitionRepo {
 
 fn row_to_def(row: &sqlx::postgres::PgRow) -> Result<ClaimDefinition, StoreError> {
     let claim_type_str: String = row.try_get("claim_type").map_err(map_row_err)?;
-    let claim_type = ClaimType::from_str(&claim_type_str)
-        .map_err(|_| map_parse_err("claim_type"))?;
+    let claim_type =
+        ClaimType::from_str(&claim_type_str).map_err(|_| map_parse_err("claim_type"))?;
     Ok(ClaimDefinition {
         id: row.try_get("id").map_err(map_row_err)?,
         application_id: row.try_get("application_id").map_err(map_row_err)?,
@@ -61,35 +61,27 @@ impl irongate_core::repositories::ClaimDefinitionRepository for PgClaimDefinitio
         application_id: Uuid,
         key: &str,
     ) -> Result<ClaimDefinition, StoreError> {
-        let row = sqlx::query(
-            "SELECT * FROM claim_definitions WHERE application_id = $1 AND key = $2",
-        )
-        .bind(application_id)
-        .bind(key)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(map_db_err)?;
+        let row =
+            sqlx::query("SELECT * FROM claim_definitions WHERE application_id = $1 AND key = $2")
+                .bind(application_id)
+                .bind(key)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(map_db_err)?;
         row_to_def(&row)
     }
 
-    async fn list_for_app(
-        &self,
-        application_id: Uuid,
-    ) -> Result<Vec<ClaimDefinition>, StoreError> {
-        let rows = sqlx::query(
-            "SELECT * FROM claim_definitions WHERE application_id = $1 ORDER BY key",
-        )
-        .bind(application_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(map_db_err)?;
+    async fn list_for_app(&self, application_id: Uuid) -> Result<Vec<ClaimDefinition>, StoreError> {
+        let rows =
+            sqlx::query("SELECT * FROM claim_definitions WHERE application_id = $1 ORDER BY key")
+                .bind(application_id)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_db_err)?;
         rows.iter().map(row_to_def).collect()
     }
 
-    async fn list_for_tenant(
-        &self,
-        tenant_id: Uuid,
-    ) -> Result<Vec<ClaimDefinition>, StoreError> {
+    async fn list_for_tenant(&self, tenant_id: Uuid) -> Result<Vec<ClaimDefinition>, StoreError> {
         let rows = sqlx::query(
             "SELECT cd.* FROM claim_definitions cd
              JOIN applications a ON a.id = cd.application_id
