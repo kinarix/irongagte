@@ -37,3 +37,10 @@ signing_keys:
   rotation_grace_days: 7
   ttl_days: 365
   refresh_interval_seconds: 60
+
+rate_limit:
+  enabled: true
+  global_per_minute: 60
+  global_burst: 30
+  auth_per_minute: 10
+  auth_burst: 3

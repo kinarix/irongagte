@@ -4,6 +4,7 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -16,6 +17,13 @@ use crate::{
     },
     state::AppState,
 };
+
+/// `per_minute` → `per_millisecond` so the underlying `governor` token bucket
+/// is smooth. `burst` is the immediate-spend allowance before queueing.
+/// Floor at 1ms because governor rejects a zero replenishment period.
+fn governor_ms(per_minute: u32) -> u64 {
+    (60_000_u64 / per_minute.max(1) as u64).max(1)
+}
 
 fn admin_router() -> Router<Arc<AppState>> {
     Router::new()
@@ -185,21 +193,41 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    Router::new()
+    let rl = &state.config.rate_limit;
+
+    // Tier 1: uncapped — operational endpoints scraped by Prometheus / load
+    // balancers must never get throttled.
+    let unmetered = Router::new()
         .route("/health", get(health::health))
-        .route("/metrics", get(metrics::render))
+        .route("/metrics", get(metrics::render));
+
+    // Tier 2: tight cap — credential-handling endpoints. These are the
+    // attractive surface for credential stuffing.
+    let mut auth_tier = Router::new()
+        .route("/oauth2/token", post(token::token))
+        .route("/operator/login", post(operator::login));
+    if rl.enabled {
+        let auth_cfg = std::sync::Arc::new(
+            GovernorConfigBuilder::default()
+                .per_millisecond(governor_ms(rl.auth_per_minute))
+                .burst_size(rl.auth_burst)
+                .finish()
+                .expect("auth governor config"),
+        );
+        auth_tier = auth_tier.layer(GovernorLayer::new(auth_cfg));
+    }
+
+    // Tier 3: everything else, behind the global cap.
+    let mut app = Router::new()
         // OIDC discovery + JWKS
         .route("/.well-known/openid-configuration", get(oidc::discovery))
         .route("/.well-known/jwks.json", get(oidc::jwks))
-        // OAuth2 / OIDC
+        // OAuth2 / OIDC (token + login are in the auth tier above)
         .route(
             "/oauth2/authorize",
             get(authorize::get_authorize).post(authorize::post_authorize),
         )
-        .route("/oauth2/token", post(token::token))
         .route("/oauth2/userinfo", get(oidc::userinfo))
-        // Operator (irongate dashboard) auth — distinct from end-user OAuth flow.
-        .route("/operator/login", post(operator::login))
         .route("/operator/logout", post(operator::logout))
         .route("/operator/me", get(operator::me))
         // Management API — users
@@ -223,7 +251,21 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest_service(
             "/admin",
             ServeDir::new("static/admin").fallback(ServeFile::new("static/admin/index.html")),
-        )
+        );
+    if rl.enabled {
+        let global_cfg = std::sync::Arc::new(
+            GovernorConfigBuilder::default()
+                .per_millisecond(governor_ms(rl.global_per_minute))
+                .burst_size(rl.global_burst)
+                .finish()
+                .expect("global governor config"),
+        );
+        app = app.layer(GovernorLayer::new(global_cfg));
+    }
+
+    unmetered
+        .merge(auth_tier)
+        .merge(app)
         .with_state(state)
         .layer(cors)
 }

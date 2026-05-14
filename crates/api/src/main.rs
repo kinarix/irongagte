@@ -172,7 +172,14 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("irongate listening on {addr}");
 
     let listener = TcpListener::bind(addr).await.context("failed to bind")?;
-    axum::serve(listener, app).await.context("server error")?;
+    // ConnectInfo<SocketAddr> is needed by tower_governor's
+    // PeerIpKeyExtractor — it reads the peer IP from the request extensions.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .context("server error")?;
 
     Ok(())
 }

@@ -358,6 +358,13 @@ fn test_settings() -> Settings {
             password: String::new(),
         },
         signing_keys: irongate_api::config::SigningKeysConfig::default(),
+        rate_limit: irongate_api::config::RateLimitConfig {
+            // Governor's PeerIpKeyExtractor needs a real socket; the axum
+            // oneshot Service in tests doesn't provide one. Disable rather
+            // than work around it.
+            enabled: false,
+            ..Default::default()
+        },
         scim_tenant_id: None,
     }
 }

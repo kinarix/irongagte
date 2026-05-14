@@ -12,6 +12,8 @@ pub struct Settings {
     pub smtp: SmtpConfig,
     #[serde(default)]
     pub signing_keys: SigningKeysConfig,
+    #[serde(default)]
+    pub rate_limit: RateLimitConfig,
     /// Single SCIM tenant; if absent, SCIM routes are not mounted.
     pub scim_tenant_id: Option<uuid::Uuid>,
 }
@@ -80,6 +82,40 @@ impl Default for SigningKeysConfig {
             rotation_grace_days: 7,
             ttl_days: 365,
             refresh_interval_seconds: 60,
+        }
+    }
+}
+
+/// Rate-limit tunables. Two tiers:
+/// * `auth_*` applies to credential-handling endpoints (token, operator login).
+/// * `global_*` applies to everything else, except `/health` and `/metrics`
+///   which are uncapped for ops scrapes.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RateLimitConfig {
+    /// When false, the governor layers are not installed and every request
+    /// passes straight through. Default true in production; tests turn it off
+    /// to avoid governor's `PeerIpKeyExtractor` rejecting requests that have
+    /// no real socket (axum's oneshot Service).
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub global_per_minute: u32,
+    pub global_burst: u32,
+    pub auth_per_minute: u32,
+    pub auth_burst: u32,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            global_per_minute: 60,
+            global_burst: 30,
+            auth_per_minute: 10,
+            auth_burst: 3,
         }
     }
 }
