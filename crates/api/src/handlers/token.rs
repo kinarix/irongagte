@@ -4,6 +4,7 @@ use axum::{extract::State, http::HeaderMap, Form, Json};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use irongate_core::types::{Application, User};
 use irongate_crypto::{jwt::sign, token::hash_token};
+use metrics;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -36,7 +37,8 @@ pub async fn token(
     headers: HeaderMap,
     Form(req): Form<TokenRequest>,
 ) -> Result<Json<Value>> {
-    match req.grant_type.as_str() {
+    let grant = req.grant_type.clone();
+    let result = match grant.as_str() {
         "password" => {
             let tenant_id = extract_tenant_id(&headers)?;
             password_grant(state, tenant_id, req).await
@@ -49,7 +51,15 @@ pub async fn token(
         other => Err(Error::BadRequest(format!(
             "unsupported grant_type: {other}"
         ))),
-    }
+    };
+    let outcome = if result.is_ok() { "success" } else { "error" };
+    metrics::counter!(
+        "irongate_token_issued_total",
+        "grant_type" => grant,
+        "outcome" => outcome,
+    )
+    .increment(1);
+    result
 }
 
 async fn password_grant(

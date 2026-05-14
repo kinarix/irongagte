@@ -48,6 +48,12 @@ pub async fn record(
         created_at: OffsetDateTime::now_utc(),
     };
 
+    metrics::counter!(
+        "irongate_audit_events_total",
+        "event_type" => event_type.to_string(),
+    )
+    .increment(1);
+
     if let Err(e) = state.audit.record(event).await {
         warn!(error = %e, event_type, "audit: failed to record event");
     }

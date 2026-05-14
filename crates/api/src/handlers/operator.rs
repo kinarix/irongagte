@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::{extract::State, http::StatusCode, Json};
 use irongate_core::{errors::StoreError, types::OperatorStatus};
 use irongate_crypto::{hash::verify_password, jwt::sign};
+use metrics;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -32,11 +33,23 @@ pub async fn login(
         .get_by_email(&req.email)
         .await
         .map_err(|e| match e {
-            StoreError::NotFound(_) => Error::Unauthorized("invalid credentials".into()),
+            StoreError::NotFound(_) => {
+                metrics::counter!(
+                    "irongate_login_attempts_total",
+                    "result" => "invalid_credentials",
+                )
+                .increment(1);
+                Error::Unauthorized("invalid credentials".into())
+            }
             other => Error::Internal(other.to_string()),
         })?;
 
     if op.status != OperatorStatus::Active {
+        metrics::counter!(
+            "irongate_login_attempts_total",
+            "result" => "not_active",
+        )
+        .increment(1);
         return Err(Error::Unauthorized("operator account is not active".into()));
     }
 
@@ -45,15 +58,29 @@ pub async fn login(
         .get_by_operator_id(op.id)
         .await
         .map_err(|e| match e {
-            StoreError::NotFound(_) => Error::Unauthorized("invalid credentials".into()),
+            StoreError::NotFound(_) => {
+                metrics::counter!(
+                    "irongate_login_attempts_total",
+                    "result" => "invalid_credentials",
+                )
+                .increment(1);
+                Error::Unauthorized("invalid credentials".into())
+            }
             other => Error::Internal(other.to_string()),
         })?;
 
     let valid = verify_password(&req.password, &creds.password_hash)
         .map_err(|_| Error::Internal("password verify failed".into()))?;
     if !valid {
+        metrics::counter!(
+            "irongate_login_attempts_total",
+            "result" => "invalid_credentials",
+        )
+        .increment(1);
         return Err(Error::Unauthorized("invalid credentials".into()));
     }
+
+    metrics::counter!("irongate_login_attempts_total", "result" => "success").increment(1);
 
     let _ = state.operators.touch_last_login(op.id).await;
 

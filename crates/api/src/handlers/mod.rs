@@ -12,6 +12,7 @@ pub mod admin_tenants;
 pub mod admin_users;
 pub mod authorize;
 pub mod health;
+pub mod metrics;
 pub mod oidc;
 pub mod operator;
 pub mod tenants;

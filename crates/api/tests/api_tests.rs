@@ -313,6 +313,15 @@ mock! {
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
+/// Builds a stand-alone Prometheus recorder for tests. The exporter library
+/// allows only one global recorder install per process; using `build_recorder`
+/// here gives each test an isolated handle without touching the global slot.
+fn test_metrics() -> metrics_exporter_prometheus::PrometheusHandle {
+    metrics_exporter_prometheus::PrometheusBuilder::new()
+        .build_recorder()
+        .handle()
+}
+
 fn test_settings() -> Settings {
     Settings {
         server: ServerConfig {
@@ -529,6 +538,7 @@ fn build_app(
         authz_svc: Arc::new(empty_authz()),
         signing_key,
         signing_keys,
+        metrics: test_metrics(),
     });
 
     build_router(state)
@@ -655,6 +665,41 @@ async fn jwks_returns_keys_array() {
     assert_eq!(keys[0]["alg"], "RS256");
 }
 
+#[tokio::test]
+async fn metrics_endpoint_returns_prometheus_text() {
+    let app = simple_app(
+        MockUserRepo::new(),
+        MockTenantRepo::new(),
+        MockApplicationRepo::new(),
+        MockRefreshTokenRepo::new(),
+    );
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let ct = resp
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(ct.starts_with("text/plain"));
+    let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+        .await
+        .unwrap();
+    // Fresh recorder with no counters fired yet; body is allowed to be empty.
+    // The important assertion is that the route exists and content-type is
+    // correct — that confirms the exporter is wired into the request path.
+    assert!(String::from_utf8_lossy(&bytes).is_ascii());
+}
+
 /// JWKS must keep publishing a key after it is retired, as long as the key
 /// hasn't expired yet — otherwise tokens minted just before rotation would
 /// fail to verify mid-flight.
@@ -704,6 +749,7 @@ async fn jwks_serves_retired_but_unexpired_keys() {
         authz_svc: Arc::new(empty_authz()),
         signing_key,
         signing_keys: Arc::new(sk_repo),
+        metrics: test_metrics(),
     });
 
     let resp = build_router(state)
@@ -1368,6 +1414,7 @@ async fn userinfo_with_valid_token_returns_claims() {
         authz_svc: Arc::new(empty_authz()),
         signing_key: signing_key.clone(),
         signing_keys: Arc::new(MockSigningKeyRepo::new()),
+        metrics: test_metrics(),
     });
 
     // Mint a valid access token using the same key as the state
@@ -1484,6 +1531,7 @@ mod admin_authz {
             authz_svc: Arc::new(empty_authz()),
             signing_key: signing_key.clone(),
             signing_keys: Arc::new(MockSigningKeyRepo::new()),
+            metrics: test_metrics(),
         });
         (build_router(state), key_record)
     }
@@ -1687,6 +1735,7 @@ mod admin_authz {
             authz_svc: Arc::new(empty_authz()),
             signing_key: signing_key.clone(),
             signing_keys: Arc::new(MockSigningKeyRepo::new()),
+            metrics: test_metrics(),
         });
         let app = build_router(state);
         let token = make_operator_token(&key_record.private_key_pem, operator_id);

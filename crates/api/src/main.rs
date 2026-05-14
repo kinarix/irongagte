@@ -23,6 +23,7 @@ use irongate_core::repositories::{
 use irongate_core::KeyAlgorithm;
 use irongate_scim::{groups::GroupState, router::scim_router, users::UserState};
 use irongate_store::{PgStore, RedisSessionStore};
+use metrics_exporter_prometheus::PrometheusBuilder;
 use tokio::net::TcpListener;
 
 #[tokio::main]
@@ -41,6 +42,10 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(&settings.log.level)
         .init();
+
+    let metrics_handle = PrometheusBuilder::new()
+        .install_recorder()
+        .context("failed to install prometheus recorder")?;
 
     let pg = PgStore::new(&settings.database.url, settings.database.max_connections)
         .await
@@ -137,6 +142,7 @@ async fn main() -> anyhow::Result<()> {
         authz_svc,
         signing_key,
         signing_keys: signing_keys_repo,
+        metrics: metrics_handle,
     });
 
     let mut app = build_router(state);

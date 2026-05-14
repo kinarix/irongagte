@@ -11,7 +11,8 @@ use crate::{
     handlers::{
         admin_applications, admin_audit, admin_claims, admin_groups, admin_idp,
         admin_operator_permissions, admin_operator_roles, admin_operators, admin_sessions,
-        admin_tenants, admin_users, authorize, health, oidc, operator, tenants, token, users,
+        admin_tenants, admin_users, authorize, health, metrics, oidc, operator, tenants, token,
+        users,
     },
     state::AppState,
 };
@@ -186,6 +187,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
     Router::new()
         .route("/health", get(health::health))
+        .route("/metrics", get(metrics::render))
         // OIDC discovery + JWKS
         .route("/.well-known/openid-configuration", get(oidc::discovery))
         .route("/.well-known/jwks.json", get(oidc::jwks))

@@ -11,6 +11,7 @@ use irongate_core::repositories::{
     TenantRepository, UserClaimRepository, UserRepository,
 };
 use irongate_core::SigningKeyRecord;
+use metrics_exporter_prometheus::PrometheusHandle;
 
 use crate::config::Settings;
 
@@ -41,4 +42,7 @@ pub struct AppState {
     /// `state.signing_key.load_full()` once per token mint.
     pub signing_key: Arc<ArcSwap<SigningKeyRecord>>,
     pub signing_keys: Arc<dyn SigningKeyRepository>,
+    /// Prometheus snapshot handle. `render()` returns the exposition-format
+    /// text body — exposed at `GET /metrics`.
+    pub metrics: PrometheusHandle,
 }
