@@ -50,8 +50,15 @@ pub async fn discovery(State(state): State<Arc<AppState>>) -> Json<Value> {
 }
 
 pub async fn jwks(State(state): State<Arc<AppState>>) -> Result<impl IntoResponse> {
-    let key = state.signing_key.as_ref().clone();
-    let jwks = build_jwks(&[key]).map_err(|e| Error::Internal(e.to_string()))?;
+    // Publish every key whose expiry is still in the future, including
+    // retired-but-not-yet-expired ones. That way tokens minted before a
+    // rotation continue to verify until they naturally expire.
+    let keys = state
+        .signing_keys
+        .list_publishable(None)
+        .await
+        .map_err(|e| Error::Internal(e.to_string()))?;
+    let jwks = build_jwks(&keys).map_err(|e| Error::Internal(e.to_string()))?;
     let body = jwks_to_json(&jwks).map_err(|e| Error::Internal(e.to_string()))?;
     Ok((
         StatusCode::OK,
@@ -66,19 +73,15 @@ pub async fn userinfo(
 ) -> Result<Json<Value>> {
     let token = extract_bearer(&headers)?;
 
-    let algorithm = algo_for_key(&state.signing_key.algorithm);
+    let key = state.signing_key.load_full();
+    let algorithm = algo_for_key(&key.algorithm);
     let mut validation = Validation::new(algorithm);
     validation.required_spec_claims.clear();
     validation.validate_aud = false;
 
-    let claims = verify::<AccessTokenClaims>(
-        token,
-        &state.signing_key.public_key_pem,
-        algorithm,
-        &validation,
-    )
-    .map_err(|_| Error::Unauthorized("invalid access token".into()))?
-    .claims;
+    let claims = verify::<AccessTokenClaims>(token, &key.public_key_pem, algorithm, &validation)
+        .map_err(|_| Error::Unauthorized("invalid access token".into()))?
+        .claims;
 
     let user_id =
         Uuid::parse_str(&claims.sub).map_err(|_| Error::Unauthorized("invalid subject".into()))?;

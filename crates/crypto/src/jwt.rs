@@ -107,7 +107,7 @@ mod tests {
 
     #[test]
     fn rsa_sign_and_verify() {
-        let rec = generate_rsa_key(Uuid::new_v4(), 90).unwrap();
+        let rec = generate_rsa_key(Some(Uuid::new_v4()), 90).unwrap();
         let c = claims(3600);
         let token = sign(&c, &rec.private_key_pem, Algorithm::RS256, Some("key-1")).unwrap();
         let data: TokenData<TestClaims> = verify(
@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn ec_sign_and_verify() {
-        let rec = generate_ec_key(Uuid::new_v4(), 90).unwrap();
+        let rec = generate_ec_key(Some(Uuid::new_v4()), 90).unwrap();
         let c = claims(3600);
         let token = sign(&c, &rec.private_key_pem, Algorithm::ES256, None).unwrap();
         let data: TokenData<TestClaims> = verify(
@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn expired_token_returns_token_expired_error() {
-        let rec = generate_rsa_key(Uuid::new_v4(), 90).unwrap();
+        let rec = generate_rsa_key(Some(Uuid::new_v4()), 90).unwrap();
         let c = TestClaims {
             sub: "u".into(),
             iat: 0,
@@ -154,8 +154,8 @@ mod tests {
 
     #[test]
     fn wrong_key_fails_verification() {
-        let rec1 = generate_rsa_key(Uuid::new_v4(), 90).unwrap();
-        let rec2 = generate_rsa_key(Uuid::new_v4(), 90).unwrap();
+        let rec1 = generate_rsa_key(Some(Uuid::new_v4()), 90).unwrap();
+        let rec2 = generate_rsa_key(Some(Uuid::new_v4()), 90).unwrap();
         let token = sign(&claims(3600), &rec1.private_key_pem, Algorithm::RS256, None).unwrap();
         let err = verify::<TestClaims>(
             &token,
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn tampered_payload_rejected() {
-        let rec = generate_rsa_key(Uuid::new_v4(), 90).unwrap();
+        let rec = generate_rsa_key(Some(Uuid::new_v4()), 90).unwrap();
         let token = sign(&claims(3600), &rec.private_key_pem, Algorithm::RS256, None).unwrap();
 
         // Flip a character in the payload section (middle part of header.payload.sig)
@@ -202,7 +202,7 @@ mod tests {
             exp: u64,
         }
 
-        let rec = generate_rsa_key(Uuid::new_v4(), 90).unwrap();
+        let rec = generate_rsa_key(Some(Uuid::new_v4()), 90).unwrap();
         let now = jsonwebtoken::get_current_timestamp();
         let c = AudClaims {
             sub: "u".into(),
@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn kid_is_preserved_in_header() {
-        let rec = generate_rsa_key(Uuid::new_v4(), 90).unwrap();
+        let rec = generate_rsa_key(Some(Uuid::new_v4()), 90).unwrap();
         let c = claims(3600);
         let token = sign(&c, &rec.private_key_pem, Algorithm::RS256, Some("my-kid")).unwrap();
         let data: TokenData<TestClaims> = verify(

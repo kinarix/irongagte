@@ -10,6 +10,8 @@ pub struct Settings {
     pub tokens: TokenConfig,
     pub session: SessionConfig,
     pub smtp: SmtpConfig,
+    #[serde(default)]
+    pub signing_keys: SigningKeysConfig,
     /// Single SCIM tenant; if absent, SCIM routes are not mounted.
     pub scim_tenant_id: Option<uuid::Uuid>,
 }
@@ -58,6 +60,28 @@ pub struct SmtpConfig {
     pub from: String,
     pub username: String,
     pub password: String,
+}
+
+/// Signing-key lifecycle knobs. Defaults are production-sane: 30-day rotation
+/// cadence, 7-day grace window before expiry, 365-day key lifetime, 60-second
+/// cache refresh.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SigningKeysConfig {
+    pub rotation_interval_days: i64,
+    pub rotation_grace_days: i64,
+    pub ttl_days: i64,
+    pub refresh_interval_seconds: u64,
+}
+
+impl Default for SigningKeysConfig {
+    fn default() -> Self {
+        Self {
+            rotation_interval_days: 30,
+            rotation_grace_days: 7,
+            ttl_days: 365,
+            refresh_interval_seconds: 60,
+        }
+    }
 }
 
 impl Settings {

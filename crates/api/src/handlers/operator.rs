@@ -73,12 +73,13 @@ pub async fn login(
         actor_type: OPERATOR_ACTOR_TYPE.to_string(),
     };
 
-    let alg = algo_for_key(&state.signing_key.algorithm);
+    let key = state.signing_key.load_full();
+    let alg = algo_for_key(&key.algorithm);
     let token = sign(
         &claims,
-        &state.signing_key.private_key_pem,
+        &key.private_key_pem,
         alg,
-        Some(&state.signing_key.id.to_string()),
+        Some(&key.id.to_string()),
     )
     .map_err(|e| Error::Internal(e.to_string()))?;
 

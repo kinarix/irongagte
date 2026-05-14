@@ -5,4 +5,5 @@ pub mod config;
 pub mod error;
 pub mod handlers;
 pub mod router;
+pub mod signing_key;
 pub mod state;

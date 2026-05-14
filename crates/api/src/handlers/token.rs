@@ -280,12 +280,13 @@ async fn mint_access_token(
         tenant_id: user.tenant_id.to_string(),
         extras,
     };
-    let alg = algo_for_key(&state.signing_key.algorithm);
+    let key = state.signing_key.load_full();
+    let alg = algo_for_key(&key.algorithm);
     sign(
         &claims,
-        &state.signing_key.private_key_pem,
+        &key.private_key_pem,
         alg,
-        Some(&state.signing_key.id.to_string()),
+        Some(&key.id.to_string()),
     )
     .map_err(|e| Error::Internal(e.to_string()))
 }
@@ -324,12 +325,13 @@ fn mint_id_token(
         name: user.name.clone(),
         tenant_id: tenant_id.to_string(),
     };
-    let alg = algo_for_key(&state.signing_key.algorithm);
+    let key = state.signing_key.load_full();
+    let alg = algo_for_key(&key.algorithm);
     sign(
         &claims,
-        &state.signing_key.private_key_pem,
+        &key.private_key_pem,
         alg,
-        Some(&state.signing_key.id.to_string()),
+        Some(&key.id.to_string()),
     )
     .map_err(|e| Error::Internal(e.to_string()))
 }

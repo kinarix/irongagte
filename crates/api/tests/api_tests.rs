@@ -19,13 +19,14 @@ use irongate_core::{
         ClaimDefinitionRepository, GroupClaimRepository, GroupRepository, IdentityRepository,
         IdpConfigRepository, OperatorCredentialsRepository, OperatorPermissionRepository,
         OperatorRepository, OperatorRoleRepository, PasskeyRepository, RefreshTokenRepository,
-        ResolvedGroupClaim, ResolvedUserClaim, SessionRepository, TenantRepository,
-        UserClaimRepository, UserCredentialsRepository, UserRepository,
+        ResolvedGroupClaim, ResolvedUserClaim, SessionRepository, SigningKeyRepository,
+        TenantRepository, UserClaimRepository, UserCredentialsRepository, UserRepository,
     },
     types::{
         AppType, Application, AuditEvent, ClaimDefinition, Group, GroupClaim, Identity, IdpConfig,
         Operator, OperatorCredentials, OperatorPermission, OperatorRole, PasskeyCredential,
-        RefreshToken, Session, Tenant, User, UserClaim, UserCredentials, UserStatus,
+        RefreshToken, Session, SigningKeyRecord, Tenant, User, UserClaim, UserCredentials,
+        UserStatus,
     },
 };
 use irongate_crypto::{hash::hash_password, jwt::sign, keys::generate_rsa_key};
@@ -245,6 +246,19 @@ mock! {
 }
 
 mock! {
+    SigningKeyRepo {}
+    #[async_trait::async_trait]
+    impl SigningKeyRepository for SigningKeyRepo {
+        async fn list_publishable(&self, tenant_id: Option<Uuid>) -> Result<Vec<SigningKeyRecord>, StoreError>;
+        async fn current(&self, tenant_id: Option<Uuid>) -> Result<Option<SigningKeyRecord>, StoreError>;
+        async fn create(&self, key: SigningKeyRecord) -> Result<SigningKeyRecord, StoreError>;
+        async fn retire(&self, id: Uuid) -> Result<(), StoreError>;
+        async fn try_acquire_rotation_lock(&self) -> Result<bool, StoreError>;
+        async fn release_rotation_lock(&self) -> Result<(), StoreError>;
+    }
+}
+
+mock! {
     OperatorCredsRepo {}
     #[async_trait::async_trait]
     impl OperatorCredentialsRepository for OperatorCredsRepo {
@@ -334,6 +348,7 @@ fn test_settings() -> Settings {
             username: String::new(),
             password: String::new(),
         },
+        signing_keys: irongate_api::config::SigningKeysConfig::default(),
         scim_tenant_id: None,
     }
 }
@@ -468,8 +483,13 @@ fn build_app(
     session_sessions: MockSessionRepo,
     session_rts: MockRefreshTokenRepo,
 ) -> axum::Router {
-    let signing_key =
-        Arc::new(generate_rsa_key(Uuid::nil(), 1).expect("failed to generate RSA key"));
+    let key_record = generate_rsa_key(None, 1).expect("failed to generate RSA key");
+    let signing_key = Arc::new(arc_swap::ArcSwap::from_pointee(key_record.clone()));
+    let mut sk_repo = MockSigningKeyRepo::new();
+    sk_repo
+        .expect_list_publishable()
+        .returning(move |_| Ok(vec![key_record.clone()]));
+    let signing_keys: Arc<dyn SigningKeyRepository> = Arc::new(sk_repo);
     let config = Arc::new(test_settings());
 
     let users: Arc<dyn UserRepository> = Arc::new(users);
@@ -508,6 +528,7 @@ fn build_app(
         session_svc,
         authz_svc: Arc::new(empty_authz()),
         signing_key,
+        signing_keys,
     });
 
     build_router(state)
@@ -632,6 +653,79 @@ async fn jwks_returns_keys_array() {
     assert!(!keys.is_empty());
     assert_eq!(keys[0]["kty"], "RSA");
     assert_eq!(keys[0]["alg"], "RS256");
+}
+
+/// JWKS must keep publishing a key after it is retired, as long as the key
+/// hasn't expired yet — otherwise tokens minted just before rotation would
+/// fail to verify mid-flight.
+#[tokio::test]
+async fn jwks_serves_retired_but_unexpired_keys() {
+    let active = generate_rsa_key(None, 30).expect("rsa");
+    let mut retired = generate_rsa_key(None, 30).expect("rsa");
+    retired.retired_at = Some(OffsetDateTime::now_utc());
+
+    let active_kid = active.id;
+    let retired_kid = retired.id;
+
+    let mut sk_repo = MockSigningKeyRepo::new();
+    sk_repo
+        .expect_list_publishable()
+        .returning(move |_| Ok(vec![active.clone(), retired.clone()]));
+
+    let key_record = generate_rsa_key(None, 1).expect("rsa");
+    let signing_key = Arc::new(arc_swap::ArcSwap::from_pointee(key_record));
+    let state = Arc::new(AppState {
+        config: Arc::new(test_settings()),
+        users: Arc::new(MockUserRepo::new()),
+        tenants: Arc::new(MockTenantRepo::new()),
+        applications: Arc::new(MockApplicationRepo::new()),
+        refresh_tokens: Arc::new(MockRefreshTokenRepo::new()),
+        groups: Arc::new(MockGroupRepo::new()),
+        passkeys: Arc::new(MockPasskeyRepo::new()),
+        identities: Arc::new(MockIdentityRepo::new()),
+        idp_configs: Arc::new(MockIdpConfigRepo::new()),
+        audit: Arc::new(permissive_audit()),
+        operators: Arc::new(MockOperatorRepo::new()),
+        operator_credentials: Arc::new(MockOperatorCredsRepo::new()),
+        operator_permissions: Arc::new(MockOperatorPermRepo::new()),
+        operator_roles_repo: Arc::new(MockOperatorRoleRepo::new()),
+        claim_definitions: Arc::new(MockClaimDefRepo::new()),
+        group_claims: Arc::new(MockGroupClaimRepo::new()),
+        user_claims: Arc::new(MockUserClaimRepo::new()),
+        auth_codes: Arc::new(MockAuthCodeStoreRepo::new()),
+        password_svc: Arc::new(PasswordService::new(
+            Arc::new(MockUserRepo::new()),
+            Arc::new(MockUserCredRepo::new()),
+        )),
+        session_svc: Arc::new(SessionService::new(
+            Arc::new(MockSessionRepo::new()),
+            Arc::new(MockRefreshTokenRepo::new()),
+        )),
+        authz_svc: Arc::new(empty_authz()),
+        signing_key,
+        signing_keys: Arc::new(sk_repo),
+    });
+
+    let resp = build_router(state)
+        .oneshot(
+            Request::builder()
+                .uri("/.well-known/jwks.json")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_json(resp).await;
+    let kids: Vec<String> = body["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| k["kid"].as_str().unwrap().to_string())
+        .collect();
+    assert!(kids.contains(&active_kid.to_string()));
+    assert!(kids.contains(&retired_kid.to_string()));
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
@@ -1236,7 +1330,8 @@ async fn userinfo_with_valid_token_returns_claims() {
         .returning(move |_, _| Ok(user_clone.clone()));
 
     // Build state manually so we can extract the signing key for minting the token
-    let signing_key = Arc::new(generate_rsa_key(Uuid::nil(), 1).expect("generate_rsa_key failed"));
+    let key_record = generate_rsa_key(None, 1).expect("generate_rsa_key failed");
+    let signing_key = Arc::new(arc_swap::ArcSwap::from_pointee(key_record));
     let config = Arc::new(test_settings());
     let users_arc: Arc<dyn UserRepository> = Arc::new(users);
 
@@ -1272,6 +1367,7 @@ async fn userinfo_with_valid_token_returns_claims() {
         session_svc,
         authz_svc: Arc::new(empty_authz()),
         signing_key: signing_key.clone(),
+        signing_keys: Arc::new(MockSigningKeyRepo::new()),
     });
 
     // Mint a valid access token using the same key as the state
@@ -1289,7 +1385,7 @@ async fn userinfo_with_valid_token_returns_claims() {
     };
     let token = sign(
         &claims,
-        &signing_key.private_key_pem,
+        &signing_key.load_full().private_key_pem,
         Algorithm::RS256,
         None,
     )
@@ -1350,11 +1446,9 @@ mod admin_authz {
         }
     }
 
-    fn admin_app(
-        operator_roles: MockOperatorRoleRepo,
-    ) -> (axum::Router, Arc<irongate_crypto::keys::SigningKeyRecord>) {
-        let signing_key =
-            Arc::new(generate_rsa_key(Uuid::nil(), 1).expect("generate_rsa_key failed"));
+    fn admin_app(operator_roles: MockOperatorRoleRepo) -> (axum::Router, Arc<SigningKeyRecord>) {
+        let key_record = Arc::new(generate_rsa_key(None, 1).expect("generate_rsa_key failed"));
+        let signing_key = Arc::new(arc_swap::ArcSwap::new(key_record.clone()));
         let config = Arc::new(test_settings());
         let password_svc = Arc::new(PasswordService::new(
             Arc::new(MockUserRepo::new()) as Arc<dyn UserRepository>,
@@ -1389,8 +1483,9 @@ mod admin_authz {
             session_svc,
             authz_svc: Arc::new(empty_authz()),
             signing_key: signing_key.clone(),
+            signing_keys: Arc::new(MockSigningKeyRepo::new()),
         });
-        (build_router(state), signing_key)
+        (build_router(state), key_record)
     }
 
     /// super_admin (global role with users:list) → 200 listing users in any tenant.
@@ -1557,8 +1652,8 @@ mod admin_authz {
             Ok(())
         });
 
-        let signing_key =
-            Arc::new(generate_rsa_key(Uuid::nil(), 1).expect("generate_rsa_key failed"));
+        let key_record = Arc::new(generate_rsa_key(None, 1).expect("generate_rsa_key failed"));
+        let signing_key = Arc::new(arc_swap::ArcSwap::new(key_record.clone()));
         let config = Arc::new(test_settings());
         let password_svc = Arc::new(PasswordService::new(
             Arc::new(MockUserRepo::new()) as Arc<dyn UserRepository>,
@@ -1591,9 +1686,10 @@ mod admin_authz {
             session_svc,
             authz_svc: Arc::new(empty_authz()),
             signing_key: signing_key.clone(),
+            signing_keys: Arc::new(MockSigningKeyRepo::new()),
         });
         let app = build_router(state);
-        let token = make_operator_token(&signing_key.private_key_pem, operator_id);
+        let token = make_operator_token(&key_record.private_key_pem, operator_id);
 
         let body = serde_json::json!({
             "users": [

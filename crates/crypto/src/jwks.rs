@@ -57,7 +57,7 @@ mod tests {
 
     #[test]
     fn rsa_jwks_contains_kid() {
-        let rec = generate_rsa_key(Uuid::new_v4(), 90).unwrap();
+        let rec = generate_rsa_key(Some(Uuid::new_v4()), 90).unwrap();
         let kid = rec.id.to_string();
         let jwks = build_jwks(&[rec]).unwrap();
         assert_eq!(jwks.keys.len(), 1);
@@ -66,7 +66,7 @@ mod tests {
 
     #[test]
     fn ec_jwks_contains_kid() {
-        let rec = generate_ec_key(Uuid::new_v4(), 90).unwrap();
+        let rec = generate_ec_key(Some(Uuid::new_v4()), 90).unwrap();
         let kid = rec.id.to_string();
         let jwks = build_jwks(&[rec]).unwrap();
         assert_eq!(jwks.keys.len(), 1);
@@ -75,8 +75,8 @@ mod tests {
 
     #[test]
     fn jwks_json_is_valid() {
-        let rsa = generate_rsa_key(Uuid::new_v4(), 90).unwrap();
-        let ec = generate_ec_key(Uuid::new_v4(), 90).unwrap();
+        let rsa = generate_rsa_key(Some(Uuid::new_v4()), 90).unwrap();
+        let ec = generate_ec_key(Some(Uuid::new_v4()), 90).unwrap();
         let jwks = build_jwks(&[rsa, ec]).unwrap();
         let json = jwks_to_json(&jwks).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -86,9 +86,9 @@ mod tests {
 
     #[test]
     fn jwks_find_by_kid() {
-        let rsa = generate_rsa_key(Uuid::new_v4(), 90).unwrap();
+        let rsa = generate_rsa_key(Some(Uuid::new_v4()), 90).unwrap();
         let target_kid = rsa.id.to_string();
-        let ec = generate_ec_key(Uuid::new_v4(), 90).unwrap();
+        let ec = generate_ec_key(Some(Uuid::new_v4()), 90).unwrap();
         let jwks = build_jwks(&[rsa, ec]).unwrap();
         assert!(jwks.find(&target_kid).is_some());
         assert!(jwks.find("nonexistent-kid").is_none());
@@ -105,7 +105,7 @@ mod tests {
 
     #[test]
     fn rsa_jwk_has_no_private_key_d() {
-        let rec = generate_rsa_key(Uuid::new_v4(), 90).unwrap();
+        let rec = generate_rsa_key(Some(Uuid::new_v4()), 90).unwrap();
         let jwks = build_jwks(&[rec]).unwrap();
         let json = jwks_to_json(&jwks).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -120,7 +120,7 @@ mod tests {
 
     #[test]
     fn ec_jwk_has_no_private_key_d() {
-        let rec = generate_ec_key(Uuid::new_v4(), 90).unwrap();
+        let rec = generate_ec_key(Some(Uuid::new_v4()), 90).unwrap();
         let jwks = build_jwks(&[rec]).unwrap();
         let json = jwks_to_json(&jwks).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();

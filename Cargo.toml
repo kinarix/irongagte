@@ -71,6 +71,9 @@ anyhow           = "1"
 # Async traits
 async-trait      = "0.1"
 
+# Concurrency primitives
+arc-swap         = "1"
+
 # Observability
 tracing                     = "0.1"
 tracing-subscriber          = { version = "0.3", features = ["env-filter", "json"] }

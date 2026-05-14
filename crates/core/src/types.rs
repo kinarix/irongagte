@@ -557,6 +557,63 @@ pub struct Group {
     pub updated_at: OffsetDateTime,
 }
 
+// ── SigningKey ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum KeyAlgorithm {
+    Rs256,
+    Es256,
+}
+
+impl std::fmt::Display for KeyAlgorithm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Rs256 => write!(f, "RS256"),
+            Self::Es256 => write!(f, "ES256"),
+        }
+    }
+}
+
+impl std::str::FromStr for KeyAlgorithm {
+    type Err = crate::errors::CoreError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "RS256" => Ok(Self::Rs256),
+            "ES256" => Ok(Self::Es256),
+            other => Err(crate::errors::CoreError::Validation(format!(
+                "unknown key algorithm: {other}"
+            ))),
+        }
+    }
+}
+
+/// An asymmetric signing key with lifecycle metadata. `tenant_id == None` is a
+/// global key; per-tenant keys carry the owning tenant id.
+#[derive(Debug, Clone)]
+pub struct SigningKeyRecord {
+    pub id: Uuid,
+    pub tenant_id: Option<Uuid>,
+    pub algorithm: KeyAlgorithm,
+    /// PEM-encoded private key (PKCS#8).
+    pub private_key_pem: String,
+    /// PEM-encoded public key (SubjectPublicKeyInfo).
+    pub public_key_pem: String,
+    pub created_at: OffsetDateTime,
+    pub expires_at: OffsetDateTime,
+    /// When this key was retired from signing. A retired key may still verify
+    /// in-flight tokens until `expires_at` passes.
+    pub retired_at: Option<OffsetDateTime>,
+}
+
+impl SigningKeyRecord {
+    /// True if this key can still be used for signing new tokens.
+    pub fn is_active(&self) -> bool {
+        let now = OffsetDateTime::now_utc();
+        self.retired_at.is_none() && now < self.expires_at
+    }
+}
+
 // ── AuditEvent ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

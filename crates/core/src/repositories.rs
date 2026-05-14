@@ -5,7 +5,7 @@ use crate::errors::StoreError;
 use crate::types::{
     Application, AuditEvent, ClaimDefinition, ClaimType, Group, GroupClaim, Identity, IdpConfig,
     MagicLink, Operator, OperatorCredentials, OperatorPermission, OperatorRole, PasskeyCredential,
-    RefreshToken, Session, Tenant, User, UserClaim, UserCredentials,
+    RefreshToken, Session, SigningKeyRecord, Tenant, User, UserClaim, UserCredentials,
 };
 use time::OffsetDateTime;
 
@@ -290,6 +290,45 @@ pub trait AuditRepository: Send + Sync {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<AuditEvent>, StoreError>;
+}
+
+// ── SigningKeyRepository ──────────────────────────────────────────────────────
+
+/// Persists asymmetric signing keys with lifecycle metadata. Keys whose
+/// `tenant_id` is `None` are global (used to sign tokens for any tenant when no
+/// tenant-specific key exists).
+///
+/// "Active" means `retired_at IS NULL AND expires_at > now()`. JWKS publication
+/// must include *all* active and retired-but-still-valid keys so existing
+/// in-flight tokens keep verifying through the grace window.
+#[async_trait]
+pub trait SigningKeyRepository: Send + Sync {
+    /// Returns all keys that should appear in the JWKS for this tenant. This is
+    /// every key whose `expires_at` is in the future, regardless of
+    /// `retired_at`. Ordered newest first.
+    async fn list_publishable(
+        &self,
+        tenant_id: Option<Uuid>,
+    ) -> Result<Vec<SigningKeyRecord>, StoreError>;
+
+    /// Returns the most recently created active key for the tenant, or `None`
+    /// if no usable key exists.
+    async fn current(
+        &self,
+        tenant_id: Option<Uuid>,
+    ) -> Result<Option<SigningKeyRecord>, StoreError>;
+
+    async fn create(&self, key: SigningKeyRecord) -> Result<SigningKeyRecord, StoreError>;
+
+    /// Marks the key as retired; it remains in `list_publishable` until its
+    /// `expires_at` passes so in-flight tokens still verify.
+    async fn retire(&self, id: Uuid) -> Result<(), StoreError>;
+
+    /// Attempts to acquire a session-scoped Postgres advisory lock. Returns
+    /// `true` if acquired (caller must call `release_rotation_lock` when done),
+    /// `false` if another replica holds it.
+    async fn try_acquire_rotation_lock(&self) -> Result<bool, StoreError>;
+    async fn release_rotation_lock(&self) -> Result<(), StoreError>;
 }
 
 // ── UserCredentialsRepository ─────────────────────────────────────────────────

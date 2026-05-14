@@ -33,14 +33,14 @@ impl FromRequestParts<Arc<AppState>> for AdminClaims {
             .and_then(|v| v.strip_prefix("Bearer "))
             .ok_or_else(|| Error::Unauthorized("missing Bearer token".into()))?;
 
-        let algo = algo_for_key(&state.signing_key.algorithm);
+        let key = state.signing_key.load_full();
+        let algo = algo_for_key(&key.algorithm);
         let mut validation = Validation::new(algo);
         validation.set_audience(&[OPERATOR_AUDIENCE]);
 
-        let claims =
-            verify::<OperatorClaims>(token, &state.signing_key.public_key_pem, algo, &validation)
-                .map_err(|_| Error::Unauthorized("invalid or expired token".into()))?
-                .claims;
+        let claims = verify::<OperatorClaims>(token, &key.public_key_pem, algo, &validation)
+            .map_err(|_| Error::Unauthorized("invalid or expired token".into()))?
+            .claims;
 
         if claims.actor_type != OPERATOR_ACTOR_TYPE {
             return Err(Error::Forbidden);

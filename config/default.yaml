@@ -31,3 +31,9 @@ smtp:
   from: "noreply@localhost"
   username: ""
   password: ""
+
+signing_keys:
+  rotation_interval_days: 30
+  rotation_grace_days: 7
+  ttl_days: 365
+  refresh_interval_seconds: 60

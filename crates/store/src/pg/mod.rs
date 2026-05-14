@@ -11,6 +11,7 @@ pub mod operator_permission;
 pub mod operator_role;
 pub mod passkey;
 pub mod refresh_token;
+pub mod signing_key;
 pub mod tenant;
 pub mod user;
 pub mod user_claim;
@@ -99,6 +100,11 @@ impl PgStore {
     }
     pub fn audit(&self) -> PgAuditRepo {
         PgAuditRepo {
+            pool: self.pool.clone(),
+        }
+    }
+    pub fn signing_keys(&self) -> signing_key::PgSigningKeyRepo {
+        signing_key::PgSigningKeyRepo {
             pool: self.pool.clone(),
         }
     }

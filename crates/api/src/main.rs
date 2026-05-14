@@ -1,9 +1,15 @@
 mod cmd;
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::Context;
-use irongate_api::{config::Settings, router::build_router, state::AppState};
+use arc_swap::ArcSwap;
+use irongate_api::{
+    config::Settings,
+    router::build_router,
+    signing_key::{self, RotationPolicy},
+    state::AppState,
+};
 use irongate_auth::{PasswordService, SessionService};
 use irongate_authz::AuthzService;
 use irongate_core::repositories::AuthCodeStore;
@@ -11,13 +17,13 @@ use irongate_core::repositories::{
     ApplicationRepository, AuditRepository, ClaimDefinitionRepository, GroupClaimRepository,
     GroupRepository, IdentityRepository, IdpConfigRepository, OperatorCredentialsRepository,
     OperatorPermissionRepository, OperatorRepository, OperatorRoleRepository, PasskeyRepository,
-    RefreshTokenRepository, TenantRepository, UserClaimRepository, UserRepository,
+    RefreshTokenRepository, SigningKeyRepository, TenantRepository, UserClaimRepository,
+    UserRepository,
 };
-use irongate_crypto::keys::generate_rsa_key;
+use irongate_core::KeyAlgorithm;
 use irongate_scim::{groups::GroupState, router::scim_router, users::UserState};
 use irongate_store::{PgStore, RedisSessionStore};
 use tokio::net::TcpListener;
-use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -25,6 +31,9 @@ async fn main() -> anyhow::Result<()> {
 
     if args.len() >= 3 && args[1] == "admin" && args[2] == "init" {
         return cmd::admin_init::run(&args[3..]).await;
+    }
+    if args.len() >= 3 && args[1] == "key" && args[2] == "rotate" {
+        return cmd::key_rotate::run(&args[3..]).await;
     }
 
     let settings = Settings::load().context("failed to load configuration")?;
@@ -65,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
     let operator_permissions: Arc<dyn OperatorPermissionRepository> =
         Arc::new(pg.operator_permissions());
     let operator_roles: Arc<dyn OperatorRoleRepository> = Arc::new(pg.operator_roles());
+    let signing_keys_repo: Arc<dyn SigningKeyRepository> = Arc::new(pg.signing_keys());
     let credentials = Arc::new(pg.user_credentials());
     let sessions = Arc::new(session_store);
 
@@ -76,8 +86,30 @@ async fn main() -> anyhow::Result<()> {
         user_claims.clone(),
     ));
 
-    let signing_key =
-        Arc::new(generate_rsa_key(Uuid::nil(), 365).context("failed to generate signing key")?);
+    let initial_key =
+        signing_key::load_or_create(&signing_keys_repo, settings.signing_keys.ttl_days)
+            .await
+            .context("failed to load or create signing key")?;
+    let signing_key = Arc::new(ArcSwap::from_pointee(initial_key));
+
+    // Background rotation: every replica wakes hourly; advisory lock ensures
+    // only one performs the actual rotation at a time.
+    tokio::spawn(signing_key::rotation_loop(
+        signing_keys_repo.clone(),
+        RotationPolicy {
+            max_age: time::Duration::days(settings.signing_keys.rotation_interval_days),
+            expiry_grace: time::Duration::days(settings.signing_keys.rotation_grace_days),
+            new_key_ttl: time::Duration::days(settings.signing_keys.ttl_days),
+        },
+        KeyAlgorithm::Rs256,
+        Duration::from_secs(60 * 60),
+    ));
+    // Hot refresh: pick up rotations performed elsewhere (CLI, peer replica).
+    tokio::spawn(signing_key::refresh_loop(
+        signing_keys_repo.clone(),
+        signing_key.clone(),
+        Duration::from_secs(settings.signing_keys.refresh_interval_seconds),
+    ));
 
     let config = Arc::new(settings.clone());
 
@@ -104,6 +136,7 @@ async fn main() -> anyhow::Result<()> {
         session_svc,
         authz_svc,
         signing_key,
+        signing_keys: signing_keys_repo,
     });
 
     let mut app = build_router(state);

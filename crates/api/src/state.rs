@@ -1,15 +1,16 @@
 use std::sync::Arc;
 
+use arc_swap::ArcSwap;
 use irongate_auth::{PasswordService, SessionService};
 use irongate_authz::AuthzService;
 use irongate_core::repositories::{
     ApplicationRepository, AuditRepository, AuthCodeStore, ClaimDefinitionRepository,
     GroupClaimRepository, GroupRepository, IdentityRepository, IdpConfigRepository,
     OperatorCredentialsRepository, OperatorPermissionRepository, OperatorRepository,
-    OperatorRoleRepository, PasskeyRepository, RefreshTokenRepository, TenantRepository,
-    UserClaimRepository, UserRepository,
+    OperatorRoleRepository, PasskeyRepository, RefreshTokenRepository, SigningKeyRepository,
+    TenantRepository, UserClaimRepository, UserRepository,
 };
-use irongate_crypto::keys::SigningKeyRecord;
+use irongate_core::SigningKeyRecord;
 
 use crate::config::Settings;
 
@@ -35,5 +36,9 @@ pub struct AppState {
     pub password_svc: Arc<PasswordService>,
     pub session_svc: Arc<SessionService>,
     pub authz_svc: Arc<AuthzService>,
-    pub signing_key: Arc<SigningKeyRecord>,
+    /// The current signing key, cached behind an `ArcSwap` so the rotation
+    /// refresh task can hot-swap it without restarting the server. Hot path:
+    /// `state.signing_key.load_full()` once per token mint.
+    pub signing_key: Arc<ArcSwap<SigningKeyRecord>>,
+    pub signing_keys: Arc<dyn SigningKeyRepository>,
 }
